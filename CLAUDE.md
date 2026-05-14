@@ -41,6 +41,7 @@
 - **LLM**: OpenAI / Anthropic / Ollama (provider abstraction)
 - **Frontend**: Streamlit (MVP) → Next.js (장기)
 - **Object storage**: 로컬 FS → MinIO (Phase 2)
+- **Python 환경**: **venv** (conda 아님). 이유: 시스템 의존성은 Docker 가 격리하고, Python 패키지는 전부 표준 pip — conda 의 강점이 안 살음. 학습(Phase 3 sVLL)용 conda env 는 그 시점에 별도 생성해 책임 분리.
 
 설정은 **모두 `env/dev.env` 환경변수** 로 관리. 코드에 비밀값/하드코딩 절대 금지. `os.environ` 직접 접근 금지 — 항상 `backend.config.get_settings()` 를 통한다.
 
@@ -98,6 +99,15 @@ python -m backend.ingest.url https://arxiv.org/abs/2401.01234
 bash scripts/install_openclaw.sh              # 권장: 개인 사용, zero-friction
 bash scripts/install_openclaw.sh --npm        # 팀/CI/재현성 필요 시 (Node 22.16+ 직접 설치 필요)
 bash scripts/install_openclaw.sh --source     # external/openclaw/ 에서 dev 빌드 (OpenClaw 자체 수정용)
+
+# Slack 데이터 import — slackdump (비공개 채널/DM 포함). 자세히는 docs/slack_setup.md
+# 워크스페이스 등록 (alias=hkkim — 이미 등록되어 있음)
+slackdump workspace list
+slackdump workspace new -token "$SLACK_USER_TOKEN" -cookie "$SLACK_D_COOKIE" hkkim
+
+# 전체 export (standard 포맷, 첨부 포함)
+slackdump export -workspace hkkim -type standard -files=true \
+    -o archive/slack_export/full_$(date +%Y-%m-%d)
 ```
 
 ## 9. 디렉토리 구조 요점
@@ -147,39 +157,68 @@ external/openclaw/         # 참조용 clone (gitignored)
 | 4 | | **sVLL LoRA 파인튜닝** (LLaMA-Factory + Qwen2-VL 등), vLLM 서빙 |
 | 5 | | Continuous training loop, 온프레미스 AI 엔진 완성 |
 
-## 12. 현재 미완 작업 (다음 세션에 우선 처리)
+## 12. 현재 진행 상태 (2026-05-14 기준)
 
-Phase 1 의 "실제 동작 검증" 까지 가려면 다음이 필요. 모두 사용자가 직접 해야 하는 일이며 코드 변경은 없음:
+### 완료
+- ✅ 전체 scaffold (backend/frontend/compose/docs/CLAUDE.md/.gitignore)
+- ✅ git origin/main 4개 commit 푸시 완료
+- ✅ OpenClaw 설치 정책 확정 (install.sh 기본)
+- ✅ **Slack export 완료**: `archive/slack_export/full_2026-05-14/` (625MB, 184 디렉토리, 6,001 JSON 메시지 파일, 198 첨부)
+  - slackdump alias: **`hkkim`** (캐시: `~/.cache/slackdump/hkkim.bin`)
+  - 워크스페이스: 알콩이달콩이 (T06PXGA7LE7, `w1710672365-sjj477000.slack.com`)
+- ✅ `env/dev.env` Slack 섹션 정리 (xoxc, d cookie 값 채워짐)
+- ✅ `docs/slack_setup.md` 가이드 작성
 
-1. **`env/dev.env` 실제 값 채우기**
-   - `POSTGRES_PASSWORD` (현재 `CHANGE_ME_BEFORE_FIRST_RUN`)
-   - `DATABASE_URL` / `DATABASE_URL_LOCAL` 의 비밀번호도 동일하게 교체
-   - `OPENAI_API_KEY` (없으면 LLM 호출 시 에러; embedding/검색만 쓸 거면 비워둬도 OK)
-2. **Python 환경**
+### Phase 1 동작 검증을 위해 남은 작업
+
+사용자 결정 대기 중 (선택지 a/b/c):
+
+1. **`env/dev.env` 마지막 채우기**:
+   - `POSTGRES_PASSWORD` (현재 `CHANGE_ME_BEFORE_FIRST_RUN`) — 강한 랜덤 직접 정해서 3 군데(POSTGRES_PASSWORD, DATABASE_URL, DATABASE_URL_LOCAL) 동일하게 치환
+   - `OPENAI_API_KEY` 결정:
+     - (a) OpenAI 키 발급 (https://platform.openai.com/api-keys)
+     - (b) **Ollama 로컬 LLM 사용** — `DEFAULT_LLM_PROVIDER=ollama` + 컨테이너에서 모델 pull
+     - (c) 일단 비워두고 `/search` 까지만 검증 (`/ask` 만 막힘)
+   - `SLACK_EXPORT_FILE_TOKEN` 의 끝부분 채우기 (현재 `__FILL_REMAINDER__` placeholder — Slack export 페이지에서 전체 값 복사)
+
+2. **Python 환경** (venv):
    ```bash
    python -m venv .venv && source .venv/bin/activate
+   pip install --upgrade pip
    pip install -r requirements.txt
    pip install --index-url https://download.pytorch.org/whl/cu124 torch  # CUDA 빌드 별도
    ```
-3. **인프라 컨테이너 기동**
+
+3. **인프라 컨테이너**:
    ```bash
    docker compose --env-file env/dev.env -f compose/docker-compose.dev.yml up -d
-   # Postgres 첫 부팅 시 backend/db/schema.sql 자동 import 됨 (compose 의 entrypoint mount)
+   # Postgres 첫 부팅 시 backend/db/schema.sql 자동 import (compose 의 entrypoint mount)
    ```
-4. **Qdrant 컬렉션 생성**
+
+4. **Qdrant 컬렉션 생성**:
    ```bash
    python scripts/init_qdrant.py  # bge-m3 1.4GB 첫 다운로드 발생
    ```
-5. **백엔드 + 프론트 기동**
+
+5. **백엔드 + 프론트**:
    ```bash
    uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
    streamlit run frontend/app.py
    ```
-6. **첫 URL 수집 동작 확인**
+
+6. **첫 URL 수집 + 검색 검증**:
    ```bash
    python -m backend.ingest.url https://arxiv.org/abs/2401.01234
    curl -X POST localhost:8000/search -H 'content-type: application/json' \
         -d '{"query":"transformer","top_k":3}' | jq
    ```
 
-각 단계에서 에러가 나면 그 자리에서 해결 — 회피하지 말고 root cause 파악. 특히 1번 (env) 과 3번 (Postgres healthcheck) 은 첫 부팅에서 자주 막힘.
+### Phase 2 다음 작업 (Slack 데이터 본격 ingest)
+
+- `backend/ingest/slack/export_parser.py` 작성 — slackdump standard 포맷 파싱 → `items` / `attachments` / `chunks` 로 변환
+  - 입력: `archive/slack_export/full_2026-05-14/<channel>/<yyyy-mm-dd>.json` + `attachments/`
+  - 출력: LinkMind DB (raw_content = Slack 메시지 원문, source_type=`slack`, source_id=`<team>_<channel>_<ts>`, source_url=`https://<workspace>/archives/<channel>/p<ts>`)
+- thread 댓글 처리 (parent_message_ts → reply)
+- 비공개 파일 첨부 다운로드 시 `SLACK_EXPORT_FILE_TOKEN` 사용
+
+각 단계에서 에러 나면 회피하지 말고 root cause 파악. 특히 1번 (env) 과 3번 (Postgres healthcheck) 은 첫 부팅에서 자주 막힘.

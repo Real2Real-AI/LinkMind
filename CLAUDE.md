@@ -94,8 +94,10 @@ streamlit run frontend/app.py
 # URL 하나 수동 수집
 python -m backend.ingest.url https://arxiv.org/abs/2401.01234
 
-# OpenClaw 설치 (옵션)
-bash scripts/install_openclaw.sh
+# OpenClaw 설치 (옵션) — 기본은 공식 install.sh (Node 자동 bootstrap)
+bash scripts/install_openclaw.sh              # 권장: 개인 사용, zero-friction
+bash scripts/install_openclaw.sh --npm        # 팀/CI/재현성 필요 시 (Node 22.16+ 직접 설치 필요)
+bash scripts/install_openclaw.sh --source     # external/openclaw/ 에서 dev 빌드 (OpenClaw 자체 수정용)
 ```
 
 ## 9. 디렉토리 구조 요점
@@ -139,8 +141,45 @@ external/openclaw/         # 참조용 clone (gitignored)
 
 | Phase | 상태 | 핵심 |
 |---|---|---|
-| 1 | 진행 중 | Postgres + Qdrant + URL ingest + Embedding + Search |
+| 1 | scaffold 완료, 실제 동작 검증 진행 중 | Postgres + Qdrant + URL ingest + Embedding + Search |
 | 2 | 다음 | AI 요약/태깅, Slack export 파서, TEI 전환, feedback 테이블, dataset exporter |
 | 3 | | OCR/멀티모달, 이미지 분석, RAG 고도화 |
 | 4 | | **sVLL LoRA 파인튜닝** (LLaMA-Factory + Qwen2-VL 등), vLLM 서빙 |
 | 5 | | Continuous training loop, 온프레미스 AI 엔진 완성 |
+
+## 12. 현재 미완 작업 (다음 세션에 우선 처리)
+
+Phase 1 의 "실제 동작 검증" 까지 가려면 다음이 필요. 모두 사용자가 직접 해야 하는 일이며 코드 변경은 없음:
+
+1. **`env/dev.env` 실제 값 채우기**
+   - `POSTGRES_PASSWORD` (현재 `CHANGE_ME_BEFORE_FIRST_RUN`)
+   - `DATABASE_URL` / `DATABASE_URL_LOCAL` 의 비밀번호도 동일하게 교체
+   - `OPENAI_API_KEY` (없으면 LLM 호출 시 에러; embedding/검색만 쓸 거면 비워둬도 OK)
+2. **Python 환경**
+   ```bash
+   python -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   pip install --index-url https://download.pytorch.org/whl/cu124 torch  # CUDA 빌드 별도
+   ```
+3. **인프라 컨테이너 기동**
+   ```bash
+   docker compose --env-file env/dev.env -f compose/docker-compose.dev.yml up -d
+   # Postgres 첫 부팅 시 backend/db/schema.sql 자동 import 됨 (compose 의 entrypoint mount)
+   ```
+4. **Qdrant 컬렉션 생성**
+   ```bash
+   python scripts/init_qdrant.py  # bge-m3 1.4GB 첫 다운로드 발생
+   ```
+5. **백엔드 + 프론트 기동**
+   ```bash
+   uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+   streamlit run frontend/app.py
+   ```
+6. **첫 URL 수집 동작 확인**
+   ```bash
+   python -m backend.ingest.url https://arxiv.org/abs/2401.01234
+   curl -X POST localhost:8000/search -H 'content-type: application/json' \
+        -d '{"query":"transformer","top_k":3}' | jq
+   ```
+
+각 단계에서 에러가 나면 그 자리에서 해결 — 회피하지 말고 root cause 파악. 특히 1번 (env) 과 3번 (Postgres healthcheck) 은 첫 부팅에서 자주 막힘.

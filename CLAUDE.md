@@ -108,6 +108,11 @@ slackdump workspace new -token "$SLACK_USER_TOKEN" -cookie "$SLACK_D_COOKIE" hkk
 # 전체 export (standard 포맷, 첨부 포함)
 slackdump export -workspace hkkim -type standard -files=true \
     -o archive/slack_export/full_$(date +%Y-%m-%d)
+
+# Ollama 셋업 (LinkMind 의 LLM provider)
+bash scripts/setup_ollama.sh                  # 컨테이너 띄움 + qwen2.5:7b pull + 검증
+bash scripts/ollama_pull.sh qwen2.5:14b       # 다른 모델 추가 받기
+bash scripts/ollama_chat.sh "안녕"             # 한 번의 채팅 테스트
 ```
 
 ## 9. 디렉토리 구조 요점
@@ -171,17 +176,14 @@ external/openclaw/         # 참조용 clone (gitignored)
 
 ### Phase 1 동작 검증을 위해 남은 작업
 
-사용자 결정 대기 중 (선택지 a/b/c):
+`env/dev.env` 의 주요 의사결정 완료 (2026-05-14):
+- ✅ `POSTGRES_PASSWORD` — 40자 alphanumeric 강한 랜덤 생성 완료
+- ✅ LLM provider — **Ollama 선택** (`DEFAULT_LLM_PROVIDER=ollama`, `OLLAMA_MODEL=qwen2.5:7b`)
+- ✅ `SLACK_EXPORT_FILE_TOKEN` — 사실상 불필요 (xoxc+cookie 로 모든 첨부 다운로드 가능). 비워둠
 
-1. **`env/dev.env` 마지막 채우기**:
-   - `POSTGRES_PASSWORD` (현재 `CHANGE_ME_BEFORE_FIRST_RUN`) — 강한 랜덤 직접 정해서 3 군데(POSTGRES_PASSWORD, DATABASE_URL, DATABASE_URL_LOCAL) 동일하게 치환
-   - `OPENAI_API_KEY` 결정:
-     - (a) OpenAI 키 발급 (https://platform.openai.com/api-keys)
-     - (b) **Ollama 로컬 LLM 사용** — `DEFAULT_LLM_PROVIDER=ollama` + 컨테이너에서 모델 pull
-     - (c) 일단 비워두고 `/search` 까지만 검증 (`/ask` 만 막힘)
-   - `SLACK_EXPORT_FILE_TOKEN` 의 끝부분 채우기 (현재 `__FILL_REMAINDER__` placeholder — Slack export 페이지에서 전체 값 복사)
+남은 단계:
 
-2. **Python 환경** (venv):
+1. **Python 환경** (venv):
    ```bash
    python -m venv .venv && source .venv/bin/activate
    pip install --upgrade pip
@@ -193,6 +195,11 @@ external/openclaw/         # 참조용 clone (gitignored)
    ```bash
    docker compose --env-file env/dev.env -f compose/docker-compose.dev.yml up -d
    # Postgres 첫 부팅 시 backend/db/schema.sql 자동 import (compose 의 entrypoint mount)
+   ```
+
+3-1. **Ollama 모델 pull + 검증** (LLM provider 가 ollama 라):
+   ```bash
+   bash scripts/setup_ollama.sh    # 컨테이너 띄움 + qwen2.5:7b pull + 동작 검증
    ```
 
 4. **Qdrant 컬렉션 생성**:

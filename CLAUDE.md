@@ -80,10 +80,9 @@ docker compose --env-file env/dev.env -f compose/docker-compose.dev.yml up -d
 # Phase 2 서비스 (TEI, MinIO) 도 함께
 docker compose --env-file env/dev.env -f compose/docker-compose.dev.yml --profile phase2 up -d
 
-# Python 환경 (최초 1회)
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install --index-url https://download.pytorch.org/whl/cu124 torch  # CUDA 빌드 별도
+# Python 환경 (최초 1회) — torch CUDA wheel + requirements 한 번에
+bash scripts/install_base_env.sh
+source .venv/bin/activate
 
 # Qdrant 컬렉션 사전 생성 (옵션)
 python scripts/init_qdrant.py
@@ -183,13 +182,13 @@ external/openclaw/         # 참조용 clone (gitignored)
 
 남은 단계:
 
-1. **Python 환경** (venv):
+1. **Python 환경** (venv) — **`scripts/install_base_env.sh` 한 줄**:
    ```bash
-   python -m venv .venv && source .venv/bin/activate
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   pip install --index-url https://download.pytorch.org/whl/cu124 torch  # CUDA 빌드 별도
+   bash scripts/install_base_env.sh        # .venv + torch cu124 + requirements
+   source .venv/bin/activate               # 현재 셸에 활성화
    ```
+   옵션: `--recreate` (clean), `--cpu` (GPU 없는 환경), `--cuda-version=126`
+   torch CUDA wheel 을 **먼저** 받고 그 다음 requirements.txt 를 처리해야 PyPI 의 CPU torch 받았다 폐기하는 낭비를 피함 — 스크립트가 알아서 처리.
 
 3. **인프라 컨테이너**:
    ```bash

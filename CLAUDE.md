@@ -167,81 +167,118 @@ external/openclaw/         # 참조용 clone (gitignored)
 | 4 | | **sVLL LoRA 파인튜닝** (LLaMA-Factory + Qwen2-VL 등), vLLM 서빙 |
 | 5 | | Continuous training loop, 온프레미스 AI 엔진 완성 |
 
-## 12. 현재 진행 상태 (2026-05-14 기준)
+## 12. 현재 진행 상태 (2026-05-15 기준)
 
-### 완료
-- ✅ 전체 scaffold (backend/frontend/compose/docs/CLAUDE.md/.gitignore)
-- ✅ git origin/main 4개 commit 푸시 완료
+### 완료 — Phase 1 동작 검증 풀체인 통과 ✅
+
+step1 ~ step5 셋업 완주 + 실제 데이터로 URL ingest → bge-m3 임베딩 → Qdrant 벡터 검색 → Ollama 한국어 요약 자동 생성 → Streamlit Search 탭에서 item 단위 dedup + 요약 표시까지 검증.
+
+검증된 데이터:
+- arxiv 2401.01234 (cure semiparametric additive hazard) → item 1건, chunks 3개, 한국어 3-5 bullet 요약
+- arxiv 1706.03762 (Attention Is All You Need) → 자동 흐름으로 item + 요약 함께 저장
+
+이외 완료:
+- ✅ 전체 scaffold + git origin/main push (모든 commit)
 - ✅ OpenClaw 설치 정책 확정 (install.sh 기본)
-- ✅ **Slack export 완료**: `archive/slack_export/full_2026-05-14/` (625MB, 184 디렉토리, 6,001 JSON 메시지 파일, 198 첨부)
+- ✅ Slack 토큰/쿠키 + slackdump workspace alias 등록 완료
   - slackdump alias: **`hkkim`** (캐시: `~/.cache/slackdump/hkkim.bin`)
   - 워크스페이스: 알콩이달콩이 (T06PXGA7LE7, `w1710672365-sjj477000.slack.com`)
-- ✅ `env/dev.env` Slack 섹션 정리 (xoxc, d cookie 값 채워짐)
-- ✅ `docs/slack_setup.md` 가이드 작성
+  - `archive/slack_export/full_2026-05-14/` 는 폐기 — 내일 `bash scripts/slack_export.sh` 로 재수집 예정
+- ✅ `env/dev.env` 주요 키 결정 (POSTGRES_PASSWORD 랜덤 40자, `DEFAULT_LLM_PROVIDER=ollama`, `OLLAMA_MODEL=qwen2.5:7b`, `HF_HUB_OFFLINE=1`)
+- ✅ `docs/slack_setup.md`, `scripts/slack_export.sh` 작성
 
-### Phase 1 동작 검증을 위해 남은 작업
+### 셋업 중 발견한 견고성 fix (모두 commit 반영됨)
 
-`env/dev.env` 의 주요 의사결정 완료 (2026-05-14):
-- ✅ `POSTGRES_PASSWORD` — 40자 alphanumeric 강한 랜덤 생성 완료
-- ✅ LLM provider — **Ollama 선택** (`DEFAULT_LLM_PROVIDER=ollama`, `OLLAMA_MODEL=qwen2.5:7b`)
-- ✅ `SLACK_EXPORT_FILE_TOKEN` — 사실상 불필요 (xoxc+cookie 로 모든 첨부 다운로드 가능). 비워둠
+- **step2_1_install_docker.sh** — "이미 설치됨" 분기에 `systemctl restart docker` 누락 → 추가 (daemon.json 만 갱신하고 reload 안 하던 버그)
+- **step2_1_check_docker.sh** — daemon.json 엔 nvidia 등록됐는데 docker daemon 미반영 케이스 self-heal (sudo restart 자동 시도). `docker info` template `{{range .Runtimes}}{{.Name}}{{end}}` 가 docker 29.x 에서 빈 출력 → `{{json .Runtimes}}` 로 변경. `--no-pull`/`--no-nvidia` 처럼 사용자 명시 skip 은 ⚠️ → ℹ️
+- **backend/embedding/qdrant_store.py** — `client.search()` 가 qdrant-client v1.12+ 에서 제거됨 → `client.query_points()` 로 마이그레이션
+- **backend/embedding/local.py** — `get_sentence_embedding_dimension` → `get_embedding_dimension` (sentence-transformers v5+ rename, FutureWarning 제거)
+- **backend/ingest/url/__main__.py** — CLI 진입점 분리 (패키지에 `__init__.py` 의 `if __name__ == "__main__":` 는 `python -m` 으로 안 도는 표준 동작)
+- **backend/config.py** — `effective_ollama_base_url` 추가 (Qdrant 와 동일 패턴, host 셸에서 도는 ingest 가 `ollama:11434` DNS 해결 실패하던 문제). `HF_HUB_OFFLINE` 자동 export — 모델 캐시 후 매 startup HF Hub HEAD 요청 + 토큰 경고 차단
+- **backend/api/search.py** — Qdrant 가 chunk 단위 색인이라 같은 item 의 여러 chunk 가 결과로 도배되던 문제 → item_id 별 최고 score chunk 1개만 유지 (overfetch + dedup)
+- **backend/ingest/url/__init__.py** — Ollama 로 한국어 3-5 bullet 요약 생성 → `items.summary` 저장 (실패해도 raw + embedding 은 영향 없음)
+- **frontend/app.py** — `summary` 우선 표시, 없으면 `snippet` fallback ("요약 미생성 — raw 본문 일부" 캡션)
+- **scripts/backfill_summary.py** — `summary IS NULL` row 들에 retroactive 한국어 요약 (Phase 2 의 다른 ingest 에도 재사용)
 
-남은 단계 (stepN_setup → stepN_check 쌍 패턴):
+### 평소 dev 실행 흐름 (3개 셸)
 
-1. **step1 — Python 환경** (venv + torch cu124 + requirements):
+인프라 컨테이너 (Postgres/Qdrant/Ollama/OpenWebUI) 는 이미 docker compose 로 떠 있다고 가정. 죽었으면 `bash scripts/step2_2_setup_infra.sh` 로 재기동. backend uvicorn / frontend streamlit 은 host 셸에서 직접 (FastAPI/Streamlit reload 가 dev 편함).
+
+```bash
+# 셸 1 — 백엔드 (FastAPI, port 8000, --reload 로 코드 변경 자동 적용)
+source .venv/bin/activate
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+
+# 셸 2 — 프론트 (Streamlit, port 8501)
+source .venv/bin/activate
+streamlit run frontend/app.py
+# 브라우저: http://localhost:8501
+
+# 셸 3 — 명령 (ingest, backfill, REPL 등)
+source .venv/bin/activate
+
+# URL ingest (자동으로 한국어 요약까지)
+python -m backend.ingest.url https://arxiv.org/abs/2401.01234
+
+# 요약 누락 row backfill (옛 데이터, 또는 prompt 버전 올린 후)
+python scripts/backfill_summary.py            # summary IS NULL 인 row 만
+python scripts/backfill_summary.py --force    # 모든 item 재요약
+
+# 검색 (CLI)
+curl -sX POST localhost:8000/search -H 'content-type: application/json' \
+     -d '{"query":"survival analysis cure model","top_k":3}' | jq
+
+# 헬스
+curl -s localhost:8000/health | jq
+```
+
+### 처음부터 셋업 (새 머신/재배포 시)
+
+stepN_setup → stepN_check 쌍 패턴:
+
+1. **step1 — Python 환경** (venv + torch cu124 + requirements)
    ```bash
    bash scripts/step1_install_base_env.sh
    source .venv/bin/activate
    bash scripts/step1_check_base_env.sh
    ```
-   옵션: `--recreate` (clean), `--cpu` (GPU 없는 환경), `--cuda-version=126`
-   torch CUDA wheel 을 **먼저** 받고 그 다음 requirements.txt 를 처리해야 PyPI 의 CPU torch 받았다 폐기하는 낭비를 피함 — 스크립트가 알아서 처리.
+   옵션: `--recreate` (clean), `--cpu` (GPU 없는 환경), `--cuda-version=126`.
 
-2. **step2_1 — Docker Engine + NVIDIA Container Toolkit 설치** (sudo, 한 번만):
+2. **step2_1 — Docker + NVIDIA Container Toolkit** (sudo, 한 번만)
    ```bash
-   bash scripts/step2_1_install_docker.sh     # docker-ce + compose v2 + nvidia-container-toolkit
-   # 그룹 적용 위해 새 셸 또는 'newgrp docker'
-   bash scripts/step2_1_check_docker.sh       # docker / compose / nvidia runtime / hello-world 풀체인 검증
+   bash scripts/step2_1_install_docker.sh
+   newgrp docker        # 또는 새 셸/SSH 재로그인
+   bash scripts/step2_1_check_docker.sh
    ```
 
-3. **step2_2 — LinkMind 인프라 컨테이너** (Postgres + Qdrant + Ollama + OpenWebUI):
+3. **step2_2 — LinkMind 인프라 컨테이너**
    ```bash
-   bash scripts/step2_2_setup_infra.sh        # docker compose up + healthy 대기 (step2_1_check 사전 호출)
+   bash scripts/step2_2_setup_infra.sh        # docker compose up + healthy 대기
    bash scripts/step2_2_check_infra.sh        # 4개 서비스 연결성 검증
-   # Postgres 첫 부팅 시 backend/db/schema.sql 자동 import (compose entrypoint mount)
    ```
 
-4. **step3 — Ollama 모델 pull + 검증** (LLM provider 가 ollama 라):
+4. **step3 — Ollama 모델 pull**
    ```bash
-   bash scripts/step3_setup_ollama.sh       # qwen2.5:7b pull + 동작 검증
-   bash scripts/step3_check_ollama.sh       # API + 모델 존재 + generate dry run
+   bash scripts/step3_setup_ollama.sh         # qwen2.5:7b
+   bash scripts/step3_check_ollama.sh
    ```
 
-5. **step4 — Qdrant 컬렉션 생성** (bge-m3 1.4GB 첫 다운로드):
+5. **step4 — Qdrant 컬렉션** (bge-m3 1.4GB 첫 다운로드)
    ```bash
    python scripts/step4_init_qdrant.py
-   bash scripts/step4_check_qdrant.sh       # 컬렉션 + vector dim 일치
+   bash scripts/step4_check_qdrant.sh
    ```
 
-6. **step5 — 백엔드 + 프론트**:
-   ```bash
-   uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
-   streamlit run frontend/app.py
-   ```
+6. **step5 — 위 "평소 dev 실행 흐름" 그대로**
 
-6. **첫 URL 수집 + 검색 검증**:
-   ```bash
-   python -m backend.ingest.url https://arxiv.org/abs/2401.01234
-   curl -X POST localhost:8000/search -H 'content-type: application/json' \
-        -d '{"query":"transformer","top_k":3}' | jq
-   ```
+### 다음 세션 작업
 
-### Phase 2 다음 작업 (Slack 데이터 본격 ingest)
+- **Ask 탭 (RAG) 검증** — Streamlit Ask 탭에서 "이 자료가 다루는 통계 모델이 뭐야?" 질문 → Qdrant 검색 + Ollama qwen2.5:7b 답변 + 인용. 인프라 + 코드 다 준비됨, 한 번 눌러서 검증만.
+- **Phase 2 — Slack 데이터 본격 ingest**
+  1. `bash scripts/slack_export.sh` 로 재수집 (자동으로 `archive/slack_export/full_<timestamp>/` + `latest` symlink)
+  2. `backend/ingest/slack/export_parser.py` 작성 — slackdump standard 포맷 파싱 → LinkMind DB
+     - 입력: `archive/slack_export/latest/<channel>/<yyyy-mm-dd>.json` + `attachments/`
+     - 출력: items (raw_content=Slack 메시지 원문, source_type=`slack`, source_id=`<team>_<channel>_<ts>`, source_url=`https://<workspace>/archives/<channel>/p<ts>`) + chunks + Qdrant 벡터
+  3. thread 댓글 (parent_message_ts → reply), 첨부 다운로드 (필요 시 SLACK_EXPORT_FILE_TOKEN)
 
-- `backend/ingest/slack/export_parser.py` 작성 — slackdump standard 포맷 파싱 → `items` / `attachments` / `chunks` 로 변환
-  - 입력: `archive/slack_export/full_2026-05-14/<channel>/<yyyy-mm-dd>.json` + `attachments/`
-  - 출력: LinkMind DB (raw_content = Slack 메시지 원문, source_type=`slack`, source_id=`<team>_<channel>_<ts>`, source_url=`https://<workspace>/archives/<channel>/p<ts>`)
-- thread 댓글 처리 (parent_message_ts → reply)
-- 비공개 파일 첨부 다운로드 시 `SLACK_EXPORT_FILE_TOKEN` 사용
-
-각 단계에서 에러 나면 회피하지 말고 root cause 파악. 특히 1번 (env) 과 3번 (Postgres healthcheck) 은 첫 부팅에서 자주 막힘.
+각 단계에서 에러 나면 회피하지 말고 root cause 파악. 이번 셋업에서 잡은 결함들 (docker reload, qdrant client v1.12+ API, ollama URL host/docker 분기, HF Hub 시끄러운 로그, search dedup) 다 그렇게 잡힌 것.

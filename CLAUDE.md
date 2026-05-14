@@ -81,10 +81,15 @@ bash scripts/step1_install_base_env.sh
 source .venv/bin/activate
 bash scripts/step1_check_base_env.sh
 
-# step2: 인프라 (Postgres + Qdrant + Ollama + OpenWebUI)
-bash scripts/step2_setup_infra.sh             # docker compose up + healthy 대기
-bash scripts/step2_check_infra.sh             # 4개 서비스 연결성 검증
-# Phase 2 (TEI + MinIO):  bash scripts/step2_setup_infra.sh --phase2
+# step2_1: 호스트에 Docker + NVIDIA Container Toolkit 설치 (sudo, 한 번만)
+bash scripts/step2_1_install_docker.sh          # docker-ce + compose v2 + nvidia-container-toolkit
+# 그룹 적용 위해 새 셸 또는 'newgrp docker'
+bash scripts/step2_1_check_docker.sh            # docker / compose / nvidia runtime / hello-world
+
+# step2_2: LinkMind 인프라 (Postgres + Qdrant + Ollama + OpenWebUI)
+bash scripts/step2_2_setup_infra.sh             # docker compose up + healthy 대기 (step2_1_check 사전 호출)
+bash scripts/step2_2_check_infra.sh             # 4개 서비스 연결성 검증
+# Phase 2 (TEI + MinIO):  bash scripts/step2_2_setup_infra.sh --phase2
 
 # step3: Ollama 모델 (env/dev.env 의 OLLAMA_MODEL pull)
 bash scripts/step3_setup_ollama.sh            # qwen2.5:7b pull + 동작 검증
@@ -192,26 +197,33 @@ external/openclaw/         # 참조용 clone (gitignored)
    옵션: `--recreate` (clean), `--cpu` (GPU 없는 환경), `--cuda-version=126`
    torch CUDA wheel 을 **먼저** 받고 그 다음 requirements.txt 를 처리해야 PyPI 의 CPU torch 받았다 폐기하는 낭비를 피함 — 스크립트가 알아서 처리.
 
-2. **step2 — 인프라 컨테이너** (Postgres + Qdrant + Ollama + OpenWebUI):
+2. **step2_1 — Docker Engine + NVIDIA Container Toolkit 설치** (sudo, 한 번만):
    ```bash
-   bash scripts/step2_setup_infra.sh        # docker compose up + healthy 대기
-   bash scripts/step2_check_infra.sh        # 4개 서비스 연결성 검증
+   bash scripts/step2_1_install_docker.sh     # docker-ce + compose v2 + nvidia-container-toolkit
+   # 그룹 적용 위해 새 셸 또는 'newgrp docker'
+   bash scripts/step2_1_check_docker.sh       # docker / compose / nvidia runtime / hello-world 풀체인 검증
+   ```
+
+3. **step2_2 — LinkMind 인프라 컨테이너** (Postgres + Qdrant + Ollama + OpenWebUI):
+   ```bash
+   bash scripts/step2_2_setup_infra.sh        # docker compose up + healthy 대기 (step2_1_check 사전 호출)
+   bash scripts/step2_2_check_infra.sh        # 4개 서비스 연결성 검증
    # Postgres 첫 부팅 시 backend/db/schema.sql 자동 import (compose entrypoint mount)
    ```
 
-3. **step3 — Ollama 모델 pull + 검증** (LLM provider 가 ollama 라):
+4. **step3 — Ollama 모델 pull + 검증** (LLM provider 가 ollama 라):
    ```bash
    bash scripts/step3_setup_ollama.sh       # qwen2.5:7b pull + 동작 검증
    bash scripts/step3_check_ollama.sh       # API + 모델 존재 + generate dry run
    ```
 
-4. **step4 — Qdrant 컬렉션 생성** (bge-m3 1.4GB 첫 다운로드):
+5. **step4 — Qdrant 컬렉션 생성** (bge-m3 1.4GB 첫 다운로드):
    ```bash
    python scripts/step4_init_qdrant.py
    bash scripts/step4_check_qdrant.sh       # 컬렉션 + vector dim 일치
    ```
 
-5. **step5 — 백엔드 + 프론트**:
+6. **step5 — 백엔드 + 프론트**:
    ```bash
    uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
    streamlit run frontend/app.py

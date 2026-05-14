@@ -35,7 +35,7 @@
 ## 4. 기술 스택 / 환경
 
 - **OS**: Ubuntu, **GPU**: NVIDIA RTX 4090 (CUDA), **Docker**: nvidia-container-toolkit
-- **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0 async + asyncpg, pydantic-settings
+- **Backend**: Python 3.11+ (검증: 3.13.12 + torch 2.6.0+cu124, NVIDIA driver 580.x), FastAPI, SQLAlchemy 2.0 async + asyncpg, pydantic-settings
 - **DB**: PostgreSQL 16 (관계형 + raw 본문) + Qdrant 1.12 (벡터)
 - **Embedding**: sentence-transformers (bge-m3) → Phase 2 에 TEI 로 전환
 - **LLM**: OpenAI / Anthropic / Ollama (provider abstraction)
@@ -73,21 +73,30 @@
 
 ## 8. 자주 쓰는 명령어
 
+셋업 스크립트는 `stepN_setup_*` / `stepN_check_*` 쌍 패턴을 따른다. 각 step setup 직후 같은 번호의 check 로 sanity 확인:
+
 ```bash
-# 인프라 (Postgres + Qdrant + Ollama + OpenWebUI)
-docker compose --env-file env/dev.env -f compose/docker-compose.dev.yml up -d
-
-# Phase 2 서비스 (TEI, MinIO) 도 함께
-docker compose --env-file env/dev.env -f compose/docker-compose.dev.yml --profile phase2 up -d
-
-# Python 환경 (최초 1회) — torch CUDA wheel + requirements 한 번에
-bash scripts/install_base_env.sh
+# step1: Python 베이스 환경 (.venv + torch cu124 + requirements)
+bash scripts/step1_install_base_env.sh
 source .venv/bin/activate
+bash scripts/step1_check_base_env.sh
 
-# Qdrant 컬렉션 사전 생성 (옵션)
-python scripts/init_qdrant.py
+# step2: 인프라 (Postgres + Qdrant + Ollama + OpenWebUI)
+bash scripts/step2_setup_infra.sh             # docker compose up + healthy 대기
+bash scripts/step2_check_infra.sh             # 4개 서비스 연결성 검증
+# Phase 2 (TEI + MinIO):  bash scripts/step2_setup_infra.sh --phase2
 
-# 백엔드 + 프론트
+# step3: Ollama 모델 (env/dev.env 의 OLLAMA_MODEL pull)
+bash scripts/step3_setup_ollama.sh            # qwen2.5:7b pull + 동작 검증
+bash scripts/step3_check_ollama.sh            # API + 모델 존재 + generate dry run
+bash scripts/ollama_pull.sh qwen2.5:14b       # 다른 모델 추가 받기 (서브 유틸)
+bash scripts/ollama_chat.sh "안녕"             # 한 번의 채팅 테스트 (서브 유틸)
+
+# step4: Qdrant 컬렉션 (bge-m3 1.4GB 첫 다운로드)
+python scripts/step4_init_qdrant.py
+bash scripts/step4_check_qdrant.sh            # 컬렉션 + vector dim 일치
+
+# step5: 백엔드 + 프론트
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 streamlit run frontend/app.py
 
@@ -100,18 +109,10 @@ bash scripts/install_openclaw.sh --npm        # 팀/CI/재현성 필요 시 (Nod
 bash scripts/install_openclaw.sh --source     # external/openclaw/ 에서 dev 빌드 (OpenClaw 자체 수정용)
 
 # Slack 데이터 import — slackdump (비공개 채널/DM 포함). 자세히는 docs/slack_setup.md
-# 워크스페이스 등록 (alias=hkkim — 이미 등록되어 있음)
 slackdump workspace list
 slackdump workspace new -token "$SLACK_USER_TOKEN" -cookie "$SLACK_D_COOKIE" hkkim
-
-# 전체 export (standard 포맷, 첨부 포함)
 slackdump export -workspace hkkim -type standard -files=true \
     -o archive/slack_export/full_$(date +%Y-%m-%d)
-
-# Ollama 셋업 (LinkMind 의 LLM provider)
-bash scripts/setup_ollama.sh                  # 컨테이너 띄움 + qwen2.5:7b pull + 검증
-bash scripts/ollama_pull.sh qwen2.5:14b       # 다른 모델 추가 받기
-bash scripts/ollama_chat.sh "안녕"             # 한 번의 채팅 테스트
 ```
 
 ## 9. 디렉토리 구조 요점
@@ -132,7 +133,7 @@ backend/
 frontend/app.py            # Streamlit MVP
 compose/docker-compose.*   # docker compose 정의
 env/                       # dev.env(gitignored) / dev.env.example
-scripts/                   # init_qdrant.py, init_db.py, install_openclaw.sh
+scripts/                   # stepN_setup_*.sh / stepN_check_*.sh + install_openclaw.sh, ollama_pull.sh, init_db.py
 docs/                      # openclaw_integration.md, training_data_design.md
 archive/                   # raw 자료 (gitignored)
 volumes/                   # 컨테이너 영속 볼륨 (gitignored)
@@ -180,33 +181,37 @@ external/openclaw/         # 참조용 clone (gitignored)
 - ✅ LLM provider — **Ollama 선택** (`DEFAULT_LLM_PROVIDER=ollama`, `OLLAMA_MODEL=qwen2.5:7b`)
 - ✅ `SLACK_EXPORT_FILE_TOKEN` — 사실상 불필요 (xoxc+cookie 로 모든 첨부 다운로드 가능). 비워둠
 
-남은 단계:
+남은 단계 (stepN_setup → stepN_check 쌍 패턴):
 
-1. **Python 환경** (venv) — **`scripts/install_base_env.sh` 한 줄**:
+1. **step1 — Python 환경** (venv + torch cu124 + requirements):
    ```bash
-   bash scripts/install_base_env.sh        # .venv + torch cu124 + requirements
-   source .venv/bin/activate               # 현재 셸에 활성화
+   bash scripts/step1_install_base_env.sh
+   source .venv/bin/activate
+   bash scripts/step1_check_base_env.sh
    ```
    옵션: `--recreate` (clean), `--cpu` (GPU 없는 환경), `--cuda-version=126`
    torch CUDA wheel 을 **먼저** 받고 그 다음 requirements.txt 를 처리해야 PyPI 의 CPU torch 받았다 폐기하는 낭비를 피함 — 스크립트가 알아서 처리.
 
-3. **인프라 컨테이너**:
+2. **step2 — 인프라 컨테이너** (Postgres + Qdrant + Ollama + OpenWebUI):
    ```bash
-   docker compose --env-file env/dev.env -f compose/docker-compose.dev.yml up -d
-   # Postgres 첫 부팅 시 backend/db/schema.sql 자동 import (compose 의 entrypoint mount)
+   bash scripts/step2_setup_infra.sh        # docker compose up + healthy 대기
+   bash scripts/step2_check_infra.sh        # 4개 서비스 연결성 검증
+   # Postgres 첫 부팅 시 backend/db/schema.sql 자동 import (compose entrypoint mount)
    ```
 
-3-1. **Ollama 모델 pull + 검증** (LLM provider 가 ollama 라):
+3. **step3 — Ollama 모델 pull + 검증** (LLM provider 가 ollama 라):
    ```bash
-   bash scripts/setup_ollama.sh    # 컨테이너 띄움 + qwen2.5:7b pull + 동작 검증
+   bash scripts/step3_setup_ollama.sh       # qwen2.5:7b pull + 동작 검증
+   bash scripts/step3_check_ollama.sh       # API + 모델 존재 + generate dry run
    ```
 
-4. **Qdrant 컬렉션 생성**:
+4. **step4 — Qdrant 컬렉션 생성** (bge-m3 1.4GB 첫 다운로드):
    ```bash
-   python scripts/init_qdrant.py  # bge-m3 1.4GB 첫 다운로드 발생
+   python scripts/step4_init_qdrant.py
+   bash scripts/step4_check_qdrant.sh       # 컬렉션 + vector dim 일치
    ```
 
-5. **백엔드 + 프론트**:
+5. **step5 — 백엔드 + 프론트**:
    ```bash
    uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
    streamlit run frontend/app.py

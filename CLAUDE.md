@@ -446,32 +446,25 @@ stepN_setup → stepN_check 쌍 패턴:
 
 6. **step5 — 위 "평소 dev 실행 흐름" 그대로**
 
-### 다음 세션 작업
+### (옛) "다음 세션 작업" — 모두 2026-05-16 wave 에서 완료
 
-**즉시 처리 가능 (이번 작업의 follow-up)**
-- 다른 두 PDF (SLAM Multi-Camera, FAST-LIVO2) 도 `python scripts/backfill_summary.py <id> --force` 로 v3 prompt 재요약 (현재 v2 또는 영어로 들어가 있을 수 있음)
-- `/files/{hash}` 검증 — Streamlit Search 결과의 source_url (`/files/...` path) 클릭 시 브라우저에서 PDF 가 inline 으로 열리는지. 안 열리면 mime/CORS 점검
-- 옛 GitHub item (microsoft/LoRA) tags 에 `#MIT` 가 안 들어가 있음 — `/ingest/github` 다시 호출하면 existing hash 라 skip. 강제 재요약하려면 backfill (다만 GitHub keyword 우선순위는 ingest 시점 한 번만 계산되므로 효과 부분적). DB 에서 직접 tags update 하거나, `--force` ingest 옵션 추가가 더 깨끗
+> 아래 항목들은 2026-05-15 시점에 미구현이었으나, 다음 날 2026-05-16 wave 에서
+> 모두 처리됨. 현재 살아있는 backlog 는 `docs/features_backlog.md` 와 §13 머리말의
+> "다음에 할 일" 을 참조.
 
-**Phase B follow-up (설계만 정리)**
-- YouTube 영상 썸네일 attachments 저장 (멀티모달 학습 데이터)
-- PDF 의 figure/image 추출 — pymupdf 의 `page.get_images()` 활용, attachments role='figure' 로 등록
-- PDF abstract 탐지 regex 보강 (현재는 "Abstract" 키워드 기반, 일부 논문에서 누락)
+| 옛 항목 | 처리 |
+|---|---|
+| SLAM/FAST-LIVO2/LiDAR PDF backfill --force | ✅ `scripts/backfill_summary.py` 의 PDF abstract 재추출 보강 + 3 PDF v3 한국어 재요약 |
+| `/files/{hash}` 검증 | ✅ 200 inline PDF + 400/404 에러 케이스 정상 |
+| microsoft/LoRA `#MIT` tag 보강 | ✅ `ingest --force` 옵션 신설 + GitHub `raw_body` 안정화 (stars/forks 제거, sorted topics) → idempotent 보장 후 force re-ingest |
+| YouTube 영상 썸네일 attachments | ✅ `_pick_best_thumbnail` + role='thumbnail' (video + playlist) |
+| PDF figure 추출 | ✅ pymupdf `get_images()` + xref dedup + 200×200 미만 skip → role='figure' |
+| PDF abstract regex 보강 | ✅ em-dash/colon/uppercase 라벨 + 'SUPPLEMENTARY MATERIAL'/'I NTRODUCTION' (글자 사이 공백) 종결 + 라벨 없는 fallback. 8 unit tests. |
+| Slack export ingest | ⏳ 미착수 — Phase C 로 이월. backlog 참조. |
+| AI 카테고리/feedback/dataset exporter/TEI/MinIO | ⏳ 미착수 — Phase 2 후반 / Phase 3. backlog 참조. |
 
-**Phase 2 본격 — Slack 데이터 ingest**
-1. `bash scripts/slack_export.sh` 로 재수집 (자동으로 `archive/slack_export/full_<timestamp>/` + `latest` symlink)
-2. `backend/ingest/slack/export_parser.py` 작성 — slackdump standard 포맷 파싱 → LinkMind DB
-   - 입력: `archive/slack_export/latest/<channel>/<yyyy-mm-dd>.json` + `attachments/`
-   - 출력: items (raw_content=Slack 메시지 원문, source_type=`slack`, source_id=`<team>_<channel>_<ts>`, source_url=`https://<workspace>/archives/<channel>/p<ts>`) + chunks + Qdrant 벡터
-   - url ingest 의 `ExtractedDoc` + `_generate_and_save_summary` / `_embed_and_index` 재사용 패턴 따르기 (이미 YouTube/GitHub/PDF 에서 검증된 흐름)
-3. thread 댓글 (parent_message_ts → reply), 첨부 다운로드 (필요 시 SLACK_EXPORT_FILE_TOKEN)
-
-**Phase 2 후반 / Phase 3 준비**
-- AI 카테고리/태깅 강화 (현재 LLM 해시태그만 — 학습 데이터 라벨링 관점에서 좀 더 구조화된 categories 도)
-- feedback 테이블 (사용자가 답변/요약 품질 평가) — Continuous training loop 준비
-- dataset exporter — Phase 4 sVLL LoRA 파인튜닝용 (item + summary + tags + chunks 를 JSONL 로)
-- TEI 임베딩 전환, MinIO object storage 전환
-
-`docs/features_backlog.md` 에 위 항목들 상세 정리.
-
-각 단계에서 에러 나면 회피하지 말고 root cause 파악. 이번 세션 결함들 (playlist abstract cap, PDF NUL byte, GitHub license 순서, qwen 영어 누출, backfill prompt 캐시 미적재 등) 도 다 그렇게 잡힌 것.
+원칙 (이번 wave 에서도 유지): 각 단계에서 에러 나면 회피하지 말고 root cause 파악.
+2026-05-15 결함 (playlist abstract cap, PDF NUL byte, GitHub license 순서, qwen
+영어 누출, backfill prompt 캐시 미적재) 와 2026-05-16 결함 (GitHub raw_body 안의
+stars/forks 가 force 매칭을 깨던 idempotent 위반, slug-with-slash 의 FastAPI path
+split, 'I NTRODUCTION' 글자 사이 공백 미인식) 도 다 그렇게 잡힘.

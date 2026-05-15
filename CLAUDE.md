@@ -169,6 +169,61 @@ external/openclaw/         # 참조용 clone (gitignored)
 
 ## 12. 현재 진행 상태 (2026-05-15 기준)
 
+### 2026-05-15 오늘 추가 — Phase 2 첫 wave 완료 ✅
+
+기존 Phase 1 (URL ingest + 검색 + RAG) 위에 다음을 한 세션에 통합:
+
+**LLM 모델 + 한국어 강제**
+- Ollama 기본 모델: `qwen2.5:7b` → `exaone3.5:7.8b` 검증 후, 사용자 결정으로 `qwen2.5:14b` 채택 (영어 본문 요약 품질 더 우수, RTX 4090 24GB OK)
+- `summary_system` prompt **v3** 활성 — "출력 무조건 한국어, 영어 본문도 번역, 예시 키워드 베껴쓰기 금지, 최소 10 bullet + 끝줄 5-10 해시태그"
+- `rag_system` prompt v1 — 한국어 답변 + 영어 기술 용어 (SLAM, Transformer, LiDAR …) 원문 보존
+- `_generate_and_save_summary` 의 user message 에 "한국어로 요약하라" prefix 추가 (system 만으로 못 끌리는 모델 방어)
+
+**DB 기반 런타임 설정 + prompt 버전 히스토리**
+- 새 테이블: `app_settings` (key/value), `prompts` (name/version/content/is_active history — Versioned analysis 원칙)
+- `backend/runtime_settings.py` — DB ↔ in-memory 캐시, lifespan 에서 `seed_and_load()` 호출
+- `backend/api/settings.py` — `GET/PUT /settings/llm`, `GET /settings/llm/models` (ollama `/api/tags`), `GET/POST /settings/prompts/{name}` + version 활성화
+- Streamlit **Settings 탭** — provider/model dropdown + prompt textarea + 새 버전 저장 + 히스토리 조회
+
+**URL ingest 강화 (논문/article 친화)**
+- 페이지의 **abstract** 가 있으면 본문 전체 대신 abstract 만 LLM 입력으로 (citation_abstract meta, arxiv `<blockquote class="abstract">`, og:description 순)
+- **페이지 keywords** 추출: citation_keywords meta, arxiv subject classes, JSON-LD keywords
+- LLM 응답 끝줄의 `#tag` 해시태그 파싱 + 페이지 keywords + dedup → `items.tags` (최대 10)
+- abstract 도 `_SUMMARY_INPUT_LIMIT` (8000자) 로 cap — 긴 abstract (플레이리스트 영상 목록) timeout 방지
+
+**해시태그 검색**
+- `/search` 가 query 의 `#tag` 토큰 자동 분리 (텍스트는 비고 태그만이면 Postgres GIN 인덱스로 최신순, 혼합이면 Qdrant + tag filter)
+- `_generate_and_save_summary` 후 Qdrant chunk payload 의 tags 도 `set_payload_for_item_chunks` 로 갱신 → 벡터 검색 결과도 tag 로 필터 가능
+
+**새 ingest source 4종 + dispatcher**
+- `POST /ingest/auto` — host 자동 분류 (youtube.com/youtu.be → youtube, github.com → github, *.pdf → pdf, 나머지 → url)
+- `POST /ingest/youtube` — 단일 영상 (yt-dlp 메타 + youtube-transcript-api 자막 ko→en, 자막 없으면 description + `#no-transcript`) / 플레이리스트 (flat-list 영상 메타 요약, source_type=`youtube_playlist`)
+- `POST /ingest/github` — REST API (`/repos/{owner}/{repo}`, `/readme`, `/languages`), README base64 decode, paper link 탐지 (arxiv/doi/paperswithcode), **라이센스 SPDX 해시태그 강제 주입** (예: `#MIT`, `#Apache-2.0`, `#GPL-3.0`, 없으면 `#no-license`)
+- `POST /ingest/pdf` (URL) + `POST /ingest/pdf/upload` (multipart) — pypdf → pymupdf fallback, NUL byte sanitize, abstract 자동 탐지, 원본 PDF 는 `volumes/archive/<yyyy>/<mm>/<hash[:2]>/<hash>` 에 loss-less 보존, attachments 테이블에 등록
+- `backend/schemas/models.py` SourceType 에 `youtube_playlist` 추가
+- 새 ingest 들은 모두 url ingest 의 helper (`ExtractedDoc`, `_generate_and_save_summary`, `_embed_and_index`) 재사용 — 한국어 요약/태그 동일 흐름
+
+**파일 서빙**
+- `GET /files/{file_hash}` — attachments 의 raw 파일 inline 응답 (PDF viewer 가 브라우저에서 열림). path traversal 방어 위해 hex SHA-256 64자만 허용
+- PDF ingest 시 local 파일 (tempfile 포함) 이면 `source_url` 을 `/files/{file_hash}` path-only 로 저장. Streamlit 이 `/`로 시작하면 API_BASE 와 결합
+
+**검증된 데이터 (오늘 추가)**
+- arxiv 2106.09685 (LoRA) URL ingest — tags 9개 (`#Transformer`, `#LowRankAdaptation`, `#PyTorch` …)
+- GitHub microsoft/LoRA — tags 10개 (MIT license tag 우선 보장은 코드 fix 반영됨)
+- YouTube 단일 영상 `PYr-LSOf2OY` (Gaussian Splatting) — 자막 없는 영상, description 으로 요약, `#no-transcript` 라벨
+- YouTube 플레이리스트 `PL5Q2soXY2Zi9...` (ETH Spring 2025) — 영상 50+개 flat list, abstract cap fix 후 backfill 로 1010자 한국어 요약 + 10 tags
+- PDF 3건 (SLAM Multi-Camera / FAST-LIVO2 / LiDAR Teach-Radar Repeat) — 각각 39 / 131 / 103 chunks, 한국어 요약 + 해시태그, 원본 PDF `volumes/archive/` 보존
+
+### 이번 세션에서 잡은 결함 (모두 commit 됨)
+
+- **plyaylist 요약 timeout** — `_generate_and_save_summary` 가 abstract 길이 무제한이라 영상 50+개 목록 (~20K자) 으로 LLM 호출하면 빈 응답. abstract 도 `_SUMMARY_INPUT_LIMIT (8000)` cap.
+- **빈 exception 메시지** — httpx timeout 등에서 `str(e)` 가 빈 문자열인 경우 로그가 무의미. `type(e).__name__: %s` 로 보강.
+- **PDF NUL byte** — pypdf 가 가끔 `0x00` 을 텍스트에 포함, Postgres `CharacterNotInRepertoireError`. `_sanitize_text` 로 제거.
+- **GitHub license 잘림** — paper_keywords 의 순서가 `[topics, primary_lang, license_tag]` 라 topics 10개로 _TAG_MAX 차서 license 잘림. `[license_tag, primary_lang, has-paper-link, *topics]` 로 우선순위 변경.
+- **영문 본문 요약이 영어로** — qwen2.5:14b 가 system prompt 의 "한국어만" 보다 본문 언어에 끌림. v3 prompt + user message prefix 두 곳에 한국어 강제.
+- **backfill prompt_version=seed-fallback** — 별도 프로세스인 `scripts/backfill_summary.py` 가 runtime_settings 캐시 미적재 상태에서 prompt 가져와 `seed-fallback` 라벨 기록. main 초입에 `await runtime_settings.seed_and_load()` 추가.
+- **lru_cache 무효화** — Settings 에서 model 바꿔도 `get_llm_provider` 캐시가 옛 인스턴스 반환. runtime_settings 변경 시 `cache_clear()` 호출하도록 wiring.
+
 ### 완료 — Phase 1 동작 검증 풀체인 통과 ✅
 
 step1 ~ step5 셋업 완주 + 실제 데이터로 URL ingest → bge-m3 임베딩 → Qdrant 벡터 검색 → Ollama 한국어 요약 자동 생성 → Streamlit Search 탭에서 item 단위 dedup + 요약 표시까지 검증.
@@ -273,12 +328,30 @@ stepN_setup → stepN_check 쌍 패턴:
 
 ### 다음 세션 작업
 
-- **Ask 탭 (RAG) 검증** — Streamlit Ask 탭에서 "이 자료가 다루는 통계 모델이 뭐야?" 질문 → Qdrant 검색 + Ollama qwen2.5:7b 답변 + 인용. 인프라 + 코드 다 준비됨, 한 번 눌러서 검증만.
-- **Phase 2 — Slack 데이터 본격 ingest**
-  1. `bash scripts/slack_export.sh` 로 재수집 (자동으로 `archive/slack_export/full_<timestamp>/` + `latest` symlink)
-  2. `backend/ingest/slack/export_parser.py` 작성 — slackdump standard 포맷 파싱 → LinkMind DB
-     - 입력: `archive/slack_export/latest/<channel>/<yyyy-mm-dd>.json` + `attachments/`
-     - 출력: items (raw_content=Slack 메시지 원문, source_type=`slack`, source_id=`<team>_<channel>_<ts>`, source_url=`https://<workspace>/archives/<channel>/p<ts>`) + chunks + Qdrant 벡터
-  3. thread 댓글 (parent_message_ts → reply), 첨부 다운로드 (필요 시 SLACK_EXPORT_FILE_TOKEN)
+**즉시 처리 가능 (이번 작업의 follow-up)**
+- 다른 두 PDF (SLAM Multi-Camera, FAST-LIVO2) 도 `python scripts/backfill_summary.py <id> --force` 로 v3 prompt 재요약 (현재 v2 또는 영어로 들어가 있을 수 있음)
+- `/files/{hash}` 검증 — Streamlit Search 결과의 source_url (`/files/...` path) 클릭 시 브라우저에서 PDF 가 inline 으로 열리는지. 안 열리면 mime/CORS 점검
+- 옛 GitHub item (microsoft/LoRA) tags 에 `#MIT` 가 안 들어가 있음 — `/ingest/github` 다시 호출하면 existing hash 라 skip. 강제 재요약하려면 backfill (다만 GitHub keyword 우선순위는 ingest 시점 한 번만 계산되므로 효과 부분적). DB 에서 직접 tags update 하거나, `--force` ingest 옵션 추가가 더 깨끗
 
-각 단계에서 에러 나면 회피하지 말고 root cause 파악. 이번 셋업에서 잡은 결함들 (docker reload, qdrant client v1.12+ API, ollama URL host/docker 분기, HF Hub 시끄러운 로그, search dedup) 다 그렇게 잡힌 것.
+**Phase B follow-up (설계만 정리)**
+- YouTube 영상 썸네일 attachments 저장 (멀티모달 학습 데이터)
+- PDF 의 figure/image 추출 — pymupdf 의 `page.get_images()` 활용, attachments role='figure' 로 등록
+- PDF abstract 탐지 regex 보강 (현재는 "Abstract" 키워드 기반, 일부 논문에서 누락)
+
+**Phase 2 본격 — Slack 데이터 ingest**
+1. `bash scripts/slack_export.sh` 로 재수집 (자동으로 `archive/slack_export/full_<timestamp>/` + `latest` symlink)
+2. `backend/ingest/slack/export_parser.py` 작성 — slackdump standard 포맷 파싱 → LinkMind DB
+   - 입력: `archive/slack_export/latest/<channel>/<yyyy-mm-dd>.json` + `attachments/`
+   - 출력: items (raw_content=Slack 메시지 원문, source_type=`slack`, source_id=`<team>_<channel>_<ts>`, source_url=`https://<workspace>/archives/<channel>/p<ts>`) + chunks + Qdrant 벡터
+   - url ingest 의 `ExtractedDoc` + `_generate_and_save_summary` / `_embed_and_index` 재사용 패턴 따르기 (이미 YouTube/GitHub/PDF 에서 검증된 흐름)
+3. thread 댓글 (parent_message_ts → reply), 첨부 다운로드 (필요 시 SLACK_EXPORT_FILE_TOKEN)
+
+**Phase 2 후반 / Phase 3 준비**
+- AI 카테고리/태깅 강화 (현재 LLM 해시태그만 — 학습 데이터 라벨링 관점에서 좀 더 구조화된 categories 도)
+- feedback 테이블 (사용자가 답변/요약 품질 평가) — Continuous training loop 준비
+- dataset exporter — Phase 4 sVLL LoRA 파인튜닝용 (item + summary + tags + chunks 를 JSONL 로)
+- TEI 임베딩 전환, MinIO object storage 전환
+
+`docs/features_backlog.md` 에 위 항목들 상세 정리.
+
+각 단계에서 에러 나면 회피하지 말고 root cause 파악. 이번 세션 결함들 (playlist abstract cap, PDF NUL byte, GitHub license 순서, qwen 영어 누출, backfill prompt 캐시 미적재 등) 도 다 그렇게 잡힌 것.

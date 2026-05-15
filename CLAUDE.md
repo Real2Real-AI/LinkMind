@@ -104,6 +104,15 @@ bash scripts/step4_check_qdrant.sh            # 컬렉션 + vector dim 일치
 # step5: 백엔드 + 프론트
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 streamlit run frontend/app.py
+# (또는 한 셸에서 동시 기동)
+bash scripts/step5_run_dev.sh             # 백그라운드, --stop / --status / --foreground
+
+# 테스트 — 카테고리별 (자세히는 9번 Testing 정책)
+bash scripts/tests/total/run_all_local.sh      # 5 카테고리 다 (로컬)
+bash scripts/tests/total/run_ci_simulation.sh  # CI 가 도는 것만 (push 전 점검)
+bash scripts/tests/ci/step1_cpu.sh             # 4s, default suite
+bash scripts/tests/ci/step2_embedding.sh       # 15s, MiniLM CPU
+bash scripts/tests/local/step5_gpu.sh          # 10s, CUDA 필요
 
 # URL 하나 수동 수집
 python -m backend.ingest.url https://arxiv.org/abs/2401.01234
@@ -120,7 +129,63 @@ slackdump export -workspace hkkim -type standard -files=true \
     -o archive/slack_export/full_$(date +%Y-%m-%d)
 ```
 
-## 9. 디렉토리 구조 요점
+## 9. Testing 정책 — 새 함수 추가 시 동반 작성 필수
+
+**핵심 규칙**: 새 기능 / 함수를 추가하거나 기존 함수의 동작이 바뀌면 같은 PR/commit
+안에서 단위 테스트도 함께 작성하거나 갱신한다. 회귀 방지 + CI 보장.
+
+### 카테고리 5 종 (마커)
+
+| 마커 | 위치 | 어디서 도는가 | 비고 |
+|---|---|---|---|
+| `cpu` (마커 없음) | `tests/*.py` | CI + 로컬 (가장 빠름, ≈4s) | pure unit + mock + fixture |
+| `embedding` | `tests/embedding/` | CI + 로컬 | 가벼운 MiniLM-L6-v2 (~80MB), CPU 가능 |
+| `integration` | `tests/integration/` | backend live (로컬), CI 에선 skip | FastAPI e2e — fixture 가 backend 미가동 시 pytest.skip |
+| `llm` | `tests/llm/` | Ollama live (로컬), CI 에선 skip | 실 LLM 호출 sanity — fixture 가 미가동 시 skip |
+| `gpu` | `tests/gpu/` | 로컬 (RTX 4090) 전용 | CUDA device 강제, CI 자동 deselect |
+
+### 새 함수 추가 시 결정 흐름
+
+1. **pure 함수 (DB/네트워크 없음)** → `tests/` 직접 추가, 마커 없음. 기존
+   `test_external_ids.py` / `test_pdf_abstract.py` 같은 형태.
+2. **외부 모듈 호출 (httpx, yt_dlp, GitHub API …)** → monkeypatch 로 가짜 응답
+   주는 mock test. `tests/test_github_ingest_mocked.py` 패턴 참고.
+3. **DB/Postgres 가 필요** → `tests/integration/` + `@pytest.mark.integration`.
+   backend fixture 로 응답 contract 만 검증 (데이터 내용 X — DB 상태 의존성 피함).
+4. **sentence-transformers / 임베딩** → `tests/embedding/` + `@pytest.mark.embedding`.
+   가벼운 MiniLM 로. bge-m3 같은 무거운 production 모델 X.
+5. **CUDA 강제** → `tests/gpu/` + `@pytest.mark.gpu`. torch.cuda.is_available()
+   체크 fixture 로 GPU 없으면 skip.
+6. **실 LLM 호출** → `tests/llm/` + `@pytest.mark.llm`. Ollama health 체크
+   fixture + 짧은 호출 (max_tokens=10).
+
+### 테스트 스크립트도 동기화
+
+새 카테고리에 첫 테스트를 추가했으면 `scripts/tests/` 의 해당 스크립트가
+자동으로 잡아준다 (marker 기반). 새로운 카테고리 자체를 만들면:
+- `pytest.ini` 에 marker 등록
+- `scripts/tests/_lib.sh` 에 `run_<category>()` 함수 추가
+- `scripts/tests/ci/` 또는 `scripts/tests/local/` 에 stepN 스크립트
+- `scripts/tests/total/run_all_local.sh` 및 `run_ci_simulation.sh` 에 호출 추가
+- `scripts/tests/README.md` 표 갱신
+
+### CI 와의 매핑
+
+GitHub Actions (`.github/workflows/ci.yml`) 는 `pytest -m "not gpu"` — GPU 만
+deselect. 나머지는 시도하되 환경 미충족 시 fixture skip. CI 가 cpu + embedding +
+integration + llm 카테고리에 한해 회귀 잡음.
+
+### 명령
+
+```bash
+bash scripts/tests/total/run_all_local.sh       # 5 카테고리 다 (로컬)
+bash scripts/tests/total/run_ci_simulation.sh   # CI 가 도는 것만
+.venv/bin/pytest -m '' tests/                   # marker 무시 전체
+.venv/bin/pytest -m embedding tests/            # 단일 카테고리
+```
+
+
+## 10. 디렉토리 구조 요점
 
 ```
 backend/
@@ -145,7 +210,7 @@ volumes/                   # 컨테이너 영속 볼륨 (gitignored)
 external/openclaw/         # 참조용 clone (gitignored)
 ```
 
-## 10. NEVER 목록
+## 11. NEVER 목록
 
 - ❌ `.env` 파일 commit
 - ❌ commit 메시지 영어 / conventional prefix
@@ -157,7 +222,7 @@ external/openclaw/         # 참조용 clone (gitignored)
 - ❌ 이미지/PDF resize·compress (학습 데이터 손실)
 - ❌ `--force` / `--no-verify` / `reset --hard` 같은 destructive 명령 자의로
 
-## 11. Phase 별 로드맵
+## 12. Phase 별 로드맵
 
 | Phase | 상태 | 핵심 |
 |---|---|---|
@@ -167,7 +232,7 @@ external/openclaw/         # 참조용 clone (gitignored)
 | 4 | | **sVLL LoRA 파인튜닝** (LLaMA-Factory + Qwen2-VL 등), vLLM 서빙 |
 | 5 | | Continuous training loop, 온프레미스 AI 엔진 완성 |
 
-## 12. 현재 진행 상태 (2026-05-15 기준)
+## 13. 현재 진행 상태 (2026-05-15 기준)
 
 ### 2026-05-15 오늘 추가 — Phase 2 첫 wave 완료 ✅
 

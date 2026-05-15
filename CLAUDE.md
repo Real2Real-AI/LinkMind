@@ -232,7 +232,62 @@ external/openclaw/         # 참조용 clone (gitignored)
 | 4 | | **sVLL LoRA 파인튜닝** (LLaMA-Factory + Qwen2-VL 등), vLLM 서빙 |
 | 5 | | Continuous training loop, 온프레미스 AI 엔진 완성 |
 
-## 13. 현재 진행 상태 (2026-05-15 기준)
+## 13. 현재 진행 상태 (2026-05-16 기준)
+
+> 자세한 backlog 와 phase 별 완료 항목 / 미구현 항목은 `docs/features_backlog.md` 가
+> source of truth. 여기는 큰 그림만.
+
+### 구현 완료 (현재 main 브랜치)
+
+**Phase 1** — Postgres + Qdrant 인프라 + URL ingest + 검색 + RAG.
+**Phase 2 first wave (2026-05-15)** — Settings UI + DB-backed runtime settings +
+한국어 prompt 강제 (`summary_system` v3) + 4종 ingest (url/youtube/github/pdf) +
+PDF 원본 attachments 보존 + `/files/{hash}` inline 서빙.
+**Phase 2 second wave (2026-05-16)** — `ingest --force` 옵션 (url/github/pdf/youtube)
++ GitHub raw_body hash 안정화 + PDF abstract regex 보강 + PDF figure 추출
+(pymupdf `get_images`) + YouTube 영상/playlist 썸네일 attachments + Streamlit
+force 체크박스.
+**Phase 2.5 — Topic 그룹핑 (2026-05-16)** — `topics` + `item_topics` 스키마 +
+`backend/utils/external_ids.py` (arxiv/doi/github/yt/ytpl 추출+정규화) + 각
+ingester 가 ingest 시 `auto_link_topics` 호출 + `/topics/*` API 4개 + Streamlit
+Topics 탭 + Search 결과에 topic 칩 + `scripts/generate_topic_descriptions.py`
+(자식 item summary 합성). 검증: arxiv:2106.09685 (LoRA paper+code), arxiv:2511.20343
+(AMB3R paper+code+project page 3 modality) 자동 그룹핑.
+**Testing 인프라 (2026-05-16)** — pytest marker 5종 (cpu/embedding/integration/
+llm/gpu) + `tests/{embedding,integration,llm,gpu}/` 디렉토리 + 실 PDF fixture
+2개 + `tests/resources/test_urls.json` + `scripts/tests/{ci,local,total}/` +
+GitHub Actions CI + `requirements-test.txt` lightweight. 총 95 tests 통과
+(cpu 83 / embedding 3 / integration 4 / llm 2 / gpu 3).
+**ENV cleanup (2026-05-16)** — LLM 런타임 선호 (provider/model) 를 env 에서 제거,
+DB `app_settings` + UI Settings 탭 만 진실. 인프라 위치/시크릿만 env. Postgres
+비번 `real2real` 로 단순화.
+
+### 다음에 할 일
+
+**짧은 follow-up** (코드 변경 없거나 작음):
+- amber 3 modality 위의 topic description 한 번 더 갱신해 description 길이/품질 확인
+- Streamlit 의 manual link UI 에 search-by-slug autocomplete
+
+**Phase 2.5 후속 (선택)**:
+- 검색 결과에 같은 topic 의 다른 modality 도 인라인 노출 (현재는 칩만 → 클릭으로 이동)
+- arxiv API 시드 — `arxiv:<id>` topic 에 title/author/published_at 자동 보강
+- paperswithcode slug → github_repo 자동 연결
+
+**Phase C — Slack/Telegram 본격**:
+- `bash scripts/slack_export.sh` 재수집
+- `backend/ingest/slack/export_parser.py` 작성 (export 표준 포맷 파싱)
+- thread 댓글 묶음, 첨부 파일 다운로드
+- Telegram ingest
+
+**Phase 3-5 (CLAUDE.md §12 로드맵)**:
+- AI 카테고리/태깅 강화, feedback 테이블, dataset exporter (JSONL)
+- TEI 임베딩 전환, MinIO object storage
+- sVLL LoRA 파인튜닝 (LLaMA-Factory + Qwen2-VL), vLLM 서빙
+- Continuous training loop
+
+---
+
+## 13.1. 과거 기록 — Phase 2 첫 wave 완료 (2026-05-15)
 
 ### 2026-05-15 오늘 추가 — Phase 2 첫 wave 완료 ✅
 

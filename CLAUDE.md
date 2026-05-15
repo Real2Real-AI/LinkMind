@@ -264,14 +264,14 @@ DB `app_settings` + UI Settings 탭 만 진실. 인프라 위치/시크릿만 en
 
 ### 다음에 할 일
 
-**짧은 follow-up** (코드 변경 없거나 작음):
-- amber 3 modality 위의 topic description 한 번 더 갱신해 description 길이/품질 확인
-- Streamlit 의 manual link UI 에 search-by-slug autocomplete
+**짧은 follow-up** ✅ 완료 (2026-05-16):
+- ✅ amber 3 modality description 검증 — 3 item (code + paper + project page) 다 반영 확인
+- ✅ Streamlit 의 manual link UI 에 selectbox + 새 slug 직접 입력 fallback (autocomplete)
 
-**Phase 2.5 후속 (선택)**:
-- 검색 결과에 같은 topic 의 다른 modality 도 인라인 노출 (현재는 칩만 → 클릭으로 이동)
-- arxiv API 시드 — `arxiv:<id>` topic 에 title/author/published_at 자동 보강
-- paperswithcode slug → github_repo 자동 연결
+**Phase 2.5 후속** ✅ 완료 / ⏸ 외부 API 종료로 보류 (2026-05-16):
+- ✅ 검색 결과에 같은 topic 의 다른 modality item 인라인 노출 — expander 안에 role + url + 첫 줄 요약
+- ✅ arxiv API 시드 — `scripts/seed_arxiv_metadata.py` 로 11개 arxiv:* topic 모두 title/authors/published/summary 보강 (RoBERTa/DeBERTa/Adapter/Prefix-Tuning 등 자동 paper 제목 채워짐). `tags` 에 `arxiv-seeded` 마커
+- ⏸ paperswithcode slug → github_repo 자동 연결 — **외부 API 종료**. paperswithcode.com 이 Hugging Face 로 이전됐고, HF papers API 에는 github_repo 매핑이 없음. 보류.
 
 **Phase C — Slack/Telegram 본격**:
 - `bash scripts/slack_export.sh` 재수집

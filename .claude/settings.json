@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(source .venv/bin/activate)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:8000/files/*)",
+      "Bash(curl -sI http://localhost:8000/files/*)",
+      "Bash(curl -s http://localhost:11434/api/tags)",
+      "Bash(curl http://localhost:11434/api/tags)",
+      "Bash(curl -s http://localhost:6333/*)",
+      "Bash(curl http://localhost:6333/*)",
+      "Bash(slackdump help*)",
+      "Bash(slackdump workspace list*)",
+      "Bash(.venv/bin/python scripts/backfill_summary.py *)",
+      "Bash(.venv/bin/python -m backend.ingest.url *)",
+      "Bash(.venv/bin/python -c *)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(.venv/bin/pytest)",
+      "Bash(curl -X POST http://localhost:8000/ingest/*)",
+      "Bash(curl -sX POST http://localhost:8000/ingest/*)",
+      "Bash(curl -X POST localhost:8000/ingest/*)",
+      "Bash(curl -sX POST localhost:8000/ingest/*)",
+      "Bash(docker exec linkmind-postgres psql -U linkmind -d linkmind -c *)",
+      "Bash(pkill -f *uvicorn*)"
+    ]
+  }
+}

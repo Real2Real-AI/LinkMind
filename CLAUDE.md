@@ -263,6 +263,12 @@ GitHub Actions CI + `requirements-test.txt` lightweight. 총 95 tests 통과
 **ENV cleanup (2026-05-16)** — LLM 런타임 선호 (provider/model) 를 env 에서 제거,
 DB `app_settings` + UI Settings 탭 만 진실. 인프라 위치/시크릿만 env. Postgres
 비번 `real2real` 로 단순화.
+**RAG 답변 품질 개선 (2026-05-16)** — `/ask` 의 context block 에 item 의 한국어
+summary (500-1500자) + tags 추가. 이전엔 chunk snippet (300자) 만 들어가 LLM 이
+자료의 깊이 활용 못 하고 일반 정의로 답하던 문제 해결. `rag_system` v3 prompt —
+'자료 구체 인용 + 자료들이 다루는 측면' 두 단락 강제. 다만 `qwen2.5:14b` 모델
+응답 시간 ~3분 — 더 가벼운 ask 전용 모델은 Phase 2 후반/Phase 4 (sVLL) 로.
+
 **리팩토링 (2026-05-16)** — `scripts/` 는 .sh 만, batch python 6개 (`backfill_*`,
 `seed_*`, `generate_*`, `init_db`, `init_qdrant`) 는 `backend/jobs/` 로,
 telegram watcher 는 `ai_agents/` 로 (NEVER §3 정신 — backend 외부 agent). 호출은
@@ -302,6 +308,14 @@ note 저장 / **ingest 성공 시 채널에서 메시지 자동 삭제** (inbox 
 - 검색 결과에 같은 topic 의 다른 modality 도 인라인 노출 → ✅ 완료
 - arxiv API 시드 → ✅ 완료
 - paperswithcode slug → ⏸ 외부 API 종료로 보류
+
+**`/ask` 자체 AI (Phase 2 후반 / Phase 4)** — 현재 qwen2.5:14b 가 RAG 응답 ~3분
+이라 UX 좋지 않음. 옵션:
+- ask 전용 더 작은 모델 (qwen2.5:7b 또는 더 작은 instruct 모델) 분리 — Settings 의
+  ask 용 별도 model 필드 추가하면 ingest 와 ask 가 다른 모델 사용 가능
+- streaming response (Streamlit 의 첫 토큰부터 표시) — UX 만 개선
+- 궁극적으로 sVLL LoRA 파인튜닝 (Phase 4) — 사용자 데이터 학습한 작은 모델로
+  ask 까지 처리 — 학습 데이터 self-loop 의 완성
 
 **Phase 3-5 (CLAUDE.md §12 로드맵)**:
 - AI 카테고리/태깅 강화, feedback 테이블, dataset exporter (JSONL)

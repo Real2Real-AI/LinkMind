@@ -261,6 +261,15 @@ GitHub Actions CI + `requirements-test.txt` lightweight. 총 95 tests 통과
 **ENV cleanup (2026-05-16)** — LLM 런타임 선호 (provider/model) 를 env 에서 제거,
 DB `app_settings` + UI Settings 탭 만 진실. 인프라 위치/시크릿만 env. Postgres
 비번 `real2real` 로 단순화.
+**Phase C wave-1 — Telegram inbox (2026-05-16)** — `LinkMind-Inbox` 텔레그램
+채널에 URL/메모 던지면 자동 ingest 되는 풀 흐름. `backend/ingest/telegram/` 모듈
+(파서 + ingest_telegram_message + export 파서) + `scripts/telegram_inbox_watcher.py`
+(Telethon daemon, --daemon idempotent, --backfill, --restart). 핵심 동작:
+URL 자동 host 라우팅 + topic auto-link / URL 없는 메모는 source_type='telegram'
+note 저장 / **ingest 성공 시 채널에서 메시지 자동 삭제** (inbox 패턴 — 처리
+안 된 것만 남음). 사용자 환경 (RTX 4090 + qwen2.5:7b) 에서 listen + backfill +
+삭제 모든 단계 라이브 검증. 동반 fix: GitHub README raw HTML strip
+(`_clean_readme_html`), PDF Title placeholder 거름 (`_extract_pdf_title`).
 
 ### 다음에 할 일
 
@@ -273,11 +282,19 @@ DB `app_settings` + UI Settings 탭 만 진실. 인프라 위치/시크릿만 en
 - ✅ arxiv API 시드 — `scripts/seed_arxiv_metadata.py` 로 11개 arxiv:* topic 모두 title/authors/published/summary 보강 (RoBERTa/DeBERTa/Adapter/Prefix-Tuning 등 자동 paper 제목 채워짐). `tags` 에 `arxiv-seeded` 마커
 - ⏸ paperswithcode slug → github_repo 자동 연결 — **외부 API 종료**. paperswithcode.com 이 Hugging Face 로 이전됐고, HF papers API 에는 github_repo 매핑이 없음. 보류.
 
-**Phase C — Slack/Telegram 본격**:
-- `bash scripts/slack_export.sh` 재수집
-- `backend/ingest/slack/export_parser.py` 작성 (export 표준 포맷 파싱)
-- thread 댓글 묶음, 첨부 파일 다운로드
-- Telegram ingest
+**Phase C wave-2 — Slack export 본격**:
+- 자료 준비됨: `archive/slack_export/public_2026-05-14/` 182 채널 (slackdump 표준 포맷)
+- `backend/ingest/slack/__init__.py` + `export_parser.py` 작성 (Telegram 패턴 일관:
+  SlackMessage dataclass + `ingest_slack_message` + `ingest_slack_export`)
+- thread 처리 (parent_message_ts → reply 묶음 → 한 item 으로 통합 또는 분리)
+- 첨부 파일 다운로드 (옵션)
+- CLI `python -m backend.ingest.slack <export_dir> [--channel <name>]`
+- 단위 테스트 (작은 fixture)
+
+**Phase 2.5 후속 (선택)**:
+- 검색 결과에 같은 topic 의 다른 modality 도 인라인 노출 → ✅ 완료
+- arxiv API 시드 → ✅ 완료
+- paperswithcode slug → ⏸ 외부 API 종료로 보류
 
 **Phase 3-5 (CLAUDE.md §12 로드맵)**:
 - AI 카테고리/태깅 강화, feedback 테이블, dataset exporter (JSONL)

@@ -295,14 +295,20 @@ note 저장 / **ingest 성공 시 채널에서 메시지 자동 삭제** (inbox 
 - ✅ arxiv API 시드 — `backend.jobs.seed_arxiv_metadata` 로 11개 arxiv:* topic 모두 title/authors/published/summary 보강 (RoBERTa/DeBERTa/Adapter/Prefix-Tuning 등 자동 paper 제목 채워짐). `tags` 에 `arxiv-seeded` 마커
 - ⏸ paperswithcode slug → github_repo 자동 연결 — **외부 API 종료**. paperswithcode.com 이 Hugging Face 로 이전됐고, HF papers API 에는 github_repo 매핑이 없음. 보류.
 
-**Phase C wave-2 — Slack export 본격**:
-- 자료 준비됨: `archive/slack_export/public_2026-05-14/` 182 채널 (slackdump 표준 포맷)
-- `backend/ingest/slack/__init__.py` + `export_parser.py` 작성 (Telegram 패턴 일관:
-  SlackMessage dataclass + `ingest_slack_message` + `ingest_slack_export`)
-- thread 처리 (parent_message_ts → reply 묶음 → 한 item 으로 통합 또는 분리)
-- 첨부 파일 다운로드 (옵션)
-- CLI `python -m backend.ingest.slack <export_dir> [--channel <name>]`
-- 단위 테스트 (작은 fixture)
+**Phase C wave-2 — Slack 워크스페이스 ingest** (2026-05-16 시작점 갱신):
+- ⚠️ 옛 `archive/slack_export/public_2026-05-14/` (182 채널 slackdump export) 는
+  사용자가 삭제. wave-2 의 시작점은 **Slack API 직접 호출로 현재 워크스페이스
+  전체 데이터 ingest**.
+- 옵션 A: `bash scripts/slack_export.sh` 재 export → `backend/ingest/slack/export_parser.py`
+  파싱 (검증된 패턴, 빠름. 다만 incremental sync 어려움 — 매번 full export).
+- **옵션 B (권장)**: `slack_sdk` 직접 — `conversations.list` / `history` /
+  `replies` 를 채널별 incremental (`oldest` = 마지막 ts). 추후 `ai_agents/`
+  의 realtime watcher 도 같은 코드 베이스에서.
+- `backend/ingest/slack/__init__.py` (Telegram 패턴 일관) — `SlackMessage`
+  dataclass + `ingest_slack_message` + `ingest_slack_channel` + `ingest_slack_workspace`.
+- thread (`thread_ts`) → reply 묶음, URL 자동 라우팅 (telegram 흐름 재사용), 첨부 download.
+- 단위 테스트 + 작은 fixture (channels.list / conversations.history 응답 모사).
+- 검증: 단일 채널 먼저 → 워크스페이스 전체.
 
 **Phase 2.5 후속 (선택)**:
 - 검색 결과에 같은 topic 의 다른 modality 도 인라인 노출 → ✅ 완료

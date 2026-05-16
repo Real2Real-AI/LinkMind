@@ -263,6 +263,11 @@ GitHub Actions CI + `requirements-test.txt` lightweight. 총 95 tests 통과
 **ENV cleanup (2026-05-16)** — LLM 런타임 선호 (provider/model) 를 env 에서 제거,
 DB `app_settings` + UI Settings 탭 만 진실. 인프라 위치/시크릿만 env. Postgres
 비번 `real2real` 로 단순화.
+**리팩토링 (2026-05-16)** — `scripts/` 는 .sh 만, batch python 6개 (`backfill_*`,
+`seed_*`, `generate_*`, `init_db`, `init_qdrant`) 는 `backend/jobs/` 로,
+telegram watcher 는 `ai_agents/` 로 (NEVER §3 정신 — backend 외부 agent). 호출은
+`python -m backend.jobs.<name>`. 5 카테고리 (cpu/embedding/integration/llm/gpu)
+모두 PASS, 135 tests.
 **Phase C wave-1 — Telegram inbox (2026-05-16)** — `LinkMind-Inbox` 텔레그램
 채널에 URL/메모 던지면 자동 ingest 되는 풀 흐름. `backend/ingest/telegram/` 모듈
 (파서 + ingest_telegram_message + export 파서) + `ai_agents/telegram_inbox_watcher.py`

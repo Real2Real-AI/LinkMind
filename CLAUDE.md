@@ -2,7 +2,7 @@
 
 이 파일은 LinkMind 저장소에서 Claude Code 가 작업할 때 자동 로드되는 가이드라인이다. 매 세션마다 같은 컨텍스트를 반복 설명할 필요 없도록 핵심만 압축해서 둔다.
 
-> 자세한 내용은 `README.md`, `docs/openclaw_integration.md`, `docs/training_data_design.md` 참고.
+> 자세한 내용은 `README.md`, `docs/agent_architecture.md`, `docs/training_data_design.md` 참고.
 
 ---
 
@@ -11,6 +11,8 @@
 **LinkMind 자체는 수단**이다. 최종 목표는 **사용자가 누적한 데이터로 sVLL(small Vision-Language LLM)을 LoRA 파인튜닝해서 온프레미스 personalized AI 엔진**을 만드는 것. 그 엔진을 **지속적으로 재학습**(continuous training loop)하는 게 장기 비전.
 
 → LinkMind 의 모든 설계 결정은 "이게 학습 데이터를 보존/구조화/내보내는 데 도움이 되는가?" 라는 질문을 통과해야 한다.
+
+**배포 전략**: self-host 가 우선이고 기본 사용 모드. 장기적으로 OSS (AGPL v3) 공개 + hosted SaaS 옵션 (§14 참조). 단, **사용자 데이터로 운영자의 공통 모델을 학습하는 것은 절대 금지** — personal LoRA 는 "사용자 본인 데이터로 본인 모델만" 이 유일한 형태.
 
 ## 2. 데이터 5대 원칙 (절대 위반 금지)
 
@@ -24,13 +26,43 @@
 
 분석 결과(summary, embedding) 는 재생성 가능하지만 raw 가 깨지면 복구 불가. **항상 raw 를 먼저 저장하고 분석은 그 후.**
 
-## 3. 시스템 경계: LinkMind ↔ OpenClaw
+## 3. 시스템 아키텍처: 단일 self-contained 시스템
 
-- **LinkMind** = backend knowledge OS. HTTP API (`/ingest`, `/search`, `/ask`) 만 노출.
-- **OpenClaw** = frontend agent. 사용자랑 Telegram/Slack/Discord 등에서 대화하고, LinkMind HTTP API 호출.
-- **두 시스템은 코드 차원에서 분리**. OpenClaw 가 깨지거나 사라져도 LinkMind 는 영향 없음. 다른 client(Claude Desktop, Cursor, n8n, 자체 봇)로 교체 가능.
-- OpenClaw 코드를 LinkMind 저장소에 vendor 하지 않는다. `external/openclaw/` 는 gitignored 참조용 clone.
-- OpenClaw 를 `LLMProvider` 추상화에 넣지 않는다 — 그건 client 이지 LLM provider 가 아니다.
+LinkMind 는 **self-contained personal AI engine** — backend + agent + UI 를 한 저장소에서 같이 유지. 외부 client agent (openclaw / hermes-agent 등) 에 의존하지 않는다. self-host 한 방에 다 따라온다.
+
+### 모듈 구조
+
+- **`backend/`** — HTTP API (`/ingest`, `/search`, `/ask`, `/graph`), DB, embedding, LLM provider, ingest 모듈
+- **`ai_agents/`** — 여러 채널의 inbox/gateway daemon. backend HTTP API 호출. ChannelAgent ABC 로 추상화 (Phase 2.5)
+  - 현재: `telegram_inbox_watcher`
+  - 단계적 확장 (Phase 3+, 사용자 채널 사용 빈도에 따라): slack, whatsapp, discord 등
+- **`frontend/`** — Streamlit MVP (Phase 1-2)
+- **`frontend_v2/`** — graph UI (cytoscape.js + vanilla JS + SSE, Phase 2.5+)
+
+모든 모듈은 같은 venv + 같은 Postgres + 같은 Qdrant 공유. 단일 docker compose, 단일 배포 단위.
+
+### 외부 프로젝트는 "벤치마킹 참조" 전용
+
+`external/{openclaw,hermes-agent,hermes-webui}/` 는 gitignored clone. **셋 다 MIT 라이센스** 이므로 AGPL v3 와 호환 — 코드 vendor 가능하다 (단 LICENSE/copyright notice 보존 필수). 다만 실무 권장:
+
+- **부분 코드 vendor** OK — license attribution 보존, 출처 주석 필수 (예: `# Adapted from hermes-agent/agent/skills.py (MIT) — Copyright (c) 2025 Nous Research`)
+- **통째 fork** 비권장 — 의존성 무거움, 우리 구조와 안 맞음, 업스트림 추적 부담
+- **일반적으로는 idea/UX 패턴 차용 후 자체 구현** — 가장 가볍고 유지보수 쉬움
+- **vendor 한 코드는 LinkMind repo 안에 복사** — `external/` 는 gitignored 이고 언제든 삭제될 수 있으므로 source path 로 import 절대 X. 복사 후 LinkMind 코드 트리에서 자족적으로 동작해야.
+- **라이센스 우회를 위해 함수명/변수명만 바꾸는 행위 금지** — 법적으로 derivative work 인정됨 (cosmetic 변형은 우회 불가) + MIT 는 attribution 만으로 완전 자유라 우회 자체가 불필요. 정직한 attribution 이 합법 + 안전 + 평판.
+
+→ "from scratch 가 비효율적이면 적극 vendor (attribution 보존), 가벼우면 재작성" 의 사용자 판단.
+
+흡수한/흡수할 패턴:
+- **hermes-agent multi-channel gateway** → `ai_agents/` 의 ChannelAgent ABC + telegram/slack/whatsapp/discord 단계적 추가 (Phase 2.5 base, Phase 3+ 실제 채널)
+- **hermes-agent `plugins/` 모양** → `backend/ingest/` 의 가벼운 정리 (auto dispatcher 명확화). ABC 강제까진 over-engineering.
+- **hermes-agent 자가학습 (auto-skills)** → 자동 prompt/ingester 개선 (Phase 3+)
+- **hermes-webui 세 패널 + SSE + vanilla JS** → `frontend_v2/` (Phase 2.5)
+- **openclaw onboard daemon** → 향후 systemd/launchd 등록 helper (Phase 3+)
+
+### LLM provider 책임 분리
+
+LLM provider 추상화는 backend 의 책임. `ai_agents/` 모듈은 LLMProvider 를 직접 호출하지 않는다 — 필요하면 backend HTTP `/ask` 통해서. 이유: agent 가 직접 LLM 부르면 model/prompt 버전 추적이 두 곳으로 갈라짐 (§2 Versioned analysis 원칙 위반).
 
 ## 4. 기술 스택 / 환경
 
@@ -39,7 +71,7 @@
 - **DB**: PostgreSQL 16 (관계형 + raw 본문) + Qdrant 1.12 (벡터)
 - **Embedding**: sentence-transformers (bge-m3) → Phase 2 에 TEI 로 전환
 - **LLM**: OpenAI / Anthropic / Ollama (provider abstraction)
-- **Frontend**: Streamlit (MVP) → Next.js (장기)
+- **Frontend**: Streamlit (Phase 1-2 MVP, Settings/Search 탭 유지) + **Next.js 14 App Router + TypeScript + Tailwind + shadcn/ui + cytoscape.js** (Phase 2.5+, graph UI 부터 SaaS path 까지 일관)
 - **Object storage**: 로컬 FS → MinIO (Phase 2)
 - **Python 환경**: **venv** (conda 아님). 이유: 시스템 의존성은 Docker 가 격리하고, Python 패키지는 전부 표준 pip — conda 의 강점이 안 살음. 학습(Phase 3 sVLL)용 conda env 는 그 시점에 별도 생성해 책임 분리.
 
@@ -117,10 +149,13 @@ bash scripts/tests/local/step5_gpu.sh          # 10s, CUDA 필요
 # URL 하나 수동 수집
 python -m backend.ingest.url https://arxiv.org/abs/2401.01234
 
-# OpenClaw 설치 (옵션) — 기본은 공식 install.sh (Node 자동 bootstrap)
-bash scripts/install_openclaw.sh              # 권장: 개인 사용, zero-friction
-bash scripts/install_openclaw.sh --npm        # 팀/CI/재현성 필요 시 (Node 22.16+ 직접 설치 필요)
-bash scripts/install_openclaw.sh --source     # external/openclaw/ 에서 dev 빌드 (OpenClaw 자체 수정용)
+# ai_agents — Telegram inbox watcher (현재). Phase 3+ 에 slack/whatsapp/discord 추가
+python -m ai_agents.telegram_inbox_watcher --daemon       # 백그라운드 listen + 자동 ingest
+python -m ai_agents.telegram_inbox_watcher --backfill      # 옛 메시지 일괄 처리
+
+# (옵션) 외부 client 사용 — openclaw 별도 띄워서 LinkMind API client 로 쓰고 싶을 때만
+# 자세한 셋업은 docs/agent_architecture.md §1 참고. 기본 사용엔 불필요.
+# bash scripts/install_openclaw.sh
 
 # Slack 데이터 import — slackdump (비공개 채널/DM 포함). 자세히는 docs/slack_setup.md
 slackdump workspace list
@@ -189,50 +224,67 @@ bash scripts/tests/total/run_ci_simulation.sh   # CI 가 도는 것만
 
 ```
 backend/
-├─ api/         # FastAPI routers (health, ingest, search, ask)
+├─ api/         # FastAPI routers (health, ingest, search, ask, graph, settings, files)
 ├─ config.py    # pydantic-settings 환경설정 (모든 env 진입점)
 ├─ db/          # connection.py, repository.py, schema.sql
 ├─ embedding/   # base.py, local.py, factory.py, qdrant_store.py
 ├─ llm/         # base.py, factory.py, openai/claude/ollama provider
 ├─ ingest/      # source 별 (url/, slack/, telegram/, pdf/, github/, arxiv/, youtube/)
+│              #   + auto dispatcher (host 기반 라우팅)
 ├─ schemas/     # Pydantic 요청·응답 모델
 ├─ storage/     # local.py (raw 파일 무손실 보존)
-├─ utils/       # chunking, hashing
+├─ utils/       # chunking, hashing, external_ids
+├─ jobs/        # batch (init_db / init_qdrant / backfill_* / seed_* / generate_*) — `python -m backend.jobs.<name>`
 └─ main.py      # FastAPI 진입점
 
-frontend/app.py            # Streamlit MVP
+ai_agents/                 # LinkMind 자체 multi-channel gateway (§3)
+├─ base.py                 #   ChannelAgent ABC (setup / listen / on_message → ingest)
+├─ telegram_inbox_watcher.py    # 현재 (ChannelAgent 상속)
+├─ slack_inbox_watcher.py       # Phase 3+
+├─ whatsapp_inbox_watcher.py    # Phase 3+
+└─ discord_inbox_watcher.py     # Phase 3+
+
+frontend/app.py            # Streamlit MVP (Phase 1-2)
+frontend_v2/               # graph UI — cytoscape.js + vanilla JS + SSE (Phase 2.5+)
+├─ index.html
+└─ static/                 # JS/CSS modules
+
 compose/docker-compose.*   # docker compose 정의
 env/                       # dev.env(gitignored) / dev.env.example
 scripts/                   # 실행용 .sh 만 — stepN_*.sh / install_openclaw.sh / ollama_pull.sh / slack_export.sh
-backend/jobs/              # backend 모듈을 호출하는 batch (init_db / init_qdrant / backfill_* / seed_* / generate_topic_descriptions) — `python -m backend.jobs.<name>`
-ai_agents/                 # LinkMind 의 client agent — telegram_inbox_watcher (NEVER §3 정신, backend 외부)
-docs/                      # openclaw_integration.md, training_data_design.md
+docs/                      # agent_architecture.md, training_data_design.md, features_backlog.md, slack_setup.md, telegram_setup.md
 archive/                   # raw 자료 (gitignored)
 volumes/                   # 컨테이너 영속 볼륨 (gitignored)
-external/openclaw/         # 참조용 clone (gitignored)
+external/{openclaw,hermes-agent,hermes-webui}/  # gitignored 벤치마킹 참조 clone (코드 import 금지)
 ```
 
 ## 11. NEVER 목록
 
 - ❌ `.env` 파일 commit
 - ❌ commit 메시지 영어 / conventional prefix
-- ❌ OpenClaw 코드를 LinkMind 안에 vendor (참조는 `external/` 에서만)
+- ❌ license 호환 안 되는 외부 코드를 LinkMind 에 vendor (GPL → AGPL 호환, MIT/Apache → AGPL 호환, AGPL→AGPL 호환, BSL/proprietary → 금지).
+- ⚠️ MIT/Apache 코드 vendor 시 LICENSE 파일 + copyright notice + 출처 주석 (`# Adapted from <repo>/<file> (MIT) — Copyright (c) ...`) 필수. `external/` 의 clone 자체는 gitignored 유지.
 - ❌ `raw_content` 를 NULL 로 두거나 변형해서 저장
 - ❌ AI 분석 결과를 model/prompt 버전 없이 저장
-- ❌ Telegram/Slack 봇을 LinkMind 안에 직접 만들기 (OpenClaw 위임이 기본)
 - ❌ `os.environ.get(...)` 코드에서 직접 사용 (`backend.config` 경유)
 - ❌ 이미지/PDF resize·compress (학습 데이터 손실)
 - ❌ `--force` / `--no-verify` / `reset --hard` 같은 destructive 명령 자의로
+- ❌ **사용자 데이터로 운영자의 공통 모델 학습** (privacy 침해 + GDPR/PIPA 위반 + training data extraction attack). personal LoRA 는 사용자 본인 데이터로 본인 모델만 (§14 Privacy 5원칙).
+- ❌ `ai_agents/` 모듈이 backend LLMProvider 를 직접 호출 — HTTP `/ask` 경유 (§3 책임 분리 + §2 Versioned analysis).
+- ❌ hosted SaaS (Phase 6+): cross-tenant 데이터 노출 (RLS / tenant_id 필터 누락)
+- ❌ hosted SaaS: 사용자 데이터를 동의 없이 외부 LLM API (OpenAI/Anthropic) 에 전송 — BYOK 또는 명시적 약관 동의한 경우만.
 
 ## 12. Phase 별 로드맵
 
 | Phase | 상태 | 핵심 |
 |---|---|---|
-| 1 | scaffold 완료, 실제 동작 검증 진행 중 | Postgres + Qdrant + URL ingest + Embedding + Search |
-| 2 | 다음 | AI 요약/태깅, Slack export 파서, TEI 전환, feedback 테이블, dataset exporter |
-| 3 | | OCR/멀티모달, 이미지 분석, RAG 고도화 |
-| 4 | | **sVLL LoRA 파인튜닝** (LLaMA-Factory + Qwen2-VL 등), vLLM 서빙 |
+| 1 | 완료 | Postgres + Qdrant + URL ingest + Embedding + Search |
+| 2 | 진행 중 | AI 요약/태깅, Slack export 파서, TEI 전환, feedback 테이블, dataset exporter |
+| 2.5 | 진행 중 | Topic 그래프 + `ai_agents/` ChannelAgent ABC (hermes-agent 영감) + graph mini web UI (hermes-webui 영감, cytoscape.js) + modality-aware item viewer |
+| 3 | | OCR/멀티모달, 이미지 분석, RAG 고도화, `ai_agents/` 실제 채널 확장 (slack/whatsapp/discord), 자가학습 (auto prompt/ingester 개선) |
+| 4 | | **sVLL LoRA 파인튜닝** (LLaMA-Factory + Qwen2-VL 등), vLLM 서빙 — self-host 또는 hosted enterprise tier 옵션 |
 | 5 | | Continuous training loop, 온프레미스 AI 엔진 완성 |
+| 6 (선택) | OSS → hosted SaaS | AGPL v3 공개, Next.js + Auth.js + Stripe, multi-tenant, BYOK. §14 참조 |
 
 ## 13. 현재 진행 상태 (2026-05-16 기준)
 
@@ -333,6 +385,38 @@ note 저장 / **ingest 성공 시 채널에서 메시지 자동 삭제** (inbox 
 - TEI 임베딩 전환, MinIO object storage
 - sVLL LoRA 파인튜닝 (LLaMA-Factory + Qwen2-VL), vLLM 서빙
 - Continuous training loop
+
+---
+
+## 14. License & Privacy & SaaS path
+
+### License — AGPL v3 (OSS 공개 시점에 적용)
+
+- **AGPL v3** — self-host 자유 (개인/회사 무제한), 단 변형해서 SaaS 로 재판매 시 변경 사항 공개 의무. Plausible/Cal.com/n8n 채택 모델.
+- `LICENSE` 파일은 OSS 공개 시점 (Phase 6-B) 에 추가. 그 전 private repo 단계에선 보류.
+- AWS / Notion 등이 LinkMindCloud 만들어 재판매하는 시나리오를 차단 — Elasticsearch 가 MIT 에서 SSPL 로 옮긴 이유.
+
+### Privacy 5원칙 (hosted SaaS 진입 시 적용)
+
+1. **사용자 데이터로 공통 모델 학습 절대 금지** — §1, §11. personal LoRA 는 사용자 본인 데이터로 본인 모델만. 이게 LinkMind 의 핵심 차별점.
+2. **Tenant isolation** — 모든 DB query 에 `tenant_id` 필터 + Postgres RLS (Row Level Security). cross-tenant search/ask 절대 X.
+3. **LLM 호출 동의** — 사용자가 BYOK (Bring Your Own Key) 했거나 명시적 약관 동의한 경우만 외부 API (OpenAI/Anthropic) 에 사용자 데이터 전송.
+4. **삭제 권리 (GDPR / 한국 PIPA)** — 계정 삭제 요청 시 30일 내 Postgres + Qdrant + R2 모든 데이터 영구 삭제. 모델 학습 결과 (만약 있다면) 도 함께 제거.
+5. **사용자 ingest 책임** — 사용자가 합법적으로 접근 권한 있는 URL 만. hosted 에선 PDF 직접 업로드 비활성 (저작권 위험).
+
+### SaaS path 단계 (시기상조 — 1년+ 후 예정)
+
+- **Phase 6-A** (현재): self-host 완성도. 본인 사용 + 데이터 누적.
+- **Phase 6-B** (6+개월 후): OSS 공개 (AGPL v3), ProductHunt / HackerNews / LinkedIn 런칭.
+- **Phase 6-C** (9-12개월 후): closed beta hosted — Fly.io / Vercel / Cloudflare R2, Google OAuth, **BYOK 강제** (운영자 LLM 비용 0), waitlist 50명.
+- **Phase 6-D** (12-15개월 후): freemium 출시 — Free (월 한도 + BYOK) / Pro $9/월 / Team $19/사용자/월. Founding member 영구 50% 할인.
+- **Phase 6-E** (15+개월 후): Enterprise tier — 격리 GPU + personal LoRA + SSO + audit log.
+
+### hosted vs self-host 기능 분리
+
+- **hosted only**: web UI, multi-tenant auth, Stripe 결제, 운영자가 제공하는 Telegram bot
+- **self-host only**: PDF 직접 업로드, personal sVLL LoRA fine-tuning, 자유로운 client 선택 (openclaw/hermes-agent/자체 봇)
+- **공통**: URL/YouTube/GitHub ingest, search, ask, graph UI, topic 그래프
 
 ---
 

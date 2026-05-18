@@ -303,10 +303,17 @@ external/{openclaw,hermes-agent,hermes-webui}/  # gitignored 벤치마킹 참조
   is_read / read_at 컬럼 + idx_items_unread partial index. migrate_schema.py
   idempotent runner. GET/PATCH /items/{id} API. **user_notes 변경 시 BackgroundTask
   로 LLM 키워드 추출 → items.tags 자동 병합** (한국어 자유 문체 지원). 23 tests 신규.
-- ⏳ **Day 5: 다양 포맷 텍스트 추출 통합 모듈** — `backend/ingest/document/`
+- ✅ **Day 5/1: 다양 포맷 텍스트 추출 통합 모듈** — `backend/ingest/document/`
   (PDF 재사용 + DOCX/PPTX/TXT/MD). python-docx + python-pptx + charset-normalizer
-  추가. 한국어 cp949 인코딩 우선. 17 tests 신규. 다음: 텔레그램 첨부 ingest +
-  caption→user_notes + is_ingest_successful 확장 (attachments 키 포함).
+  추가. 한국어 cp949 인코딩 우선. 17 tests 신규.
+- ✅ **Day 5/2: 텔레그램 첨부 자동 ingest** — `ingest_document()` 진입점 추가
+  (PDF ingest 패턴 재사용 + 모든 포맷). TelegramMessage 에 `attachments` 필드,
+  ingest_telegram_message 의 첨부 분기, caption → user_notes 자동 저장,
+  ai_agents/telegram_inbox_watcher 가 Telethon `download_media` 호출 → 임시
+  디렉토리 → ingest 후 tmp 정리, ChannelAgent.is_ingest_successful 확장 —
+  attachments 까지 모두 error 없어야만 메시지 삭제 (사용자 가드레일 "하나라도
+  누락이면 삭제 X"). 5 attachments 케이스 신규. 177 tests 통과.
+- ⏳ Day 5/3: backend/ingest 정리 (auto dispatcher 명확화 — 짧게)
 - ⏳ Day 6-9: graph backend endpoint (cytoscape JSON)
 - ⏳ Day 10-13: Next.js 14 graph UI + modality viewer
 - ⏳ Day 14: end-to-end 통합

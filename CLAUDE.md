@@ -286,12 +286,104 @@ external/{openclaw,hermes-agent,hermes-webui}/  # gitignored 벤치마킹 참조
 | 5 | | Continuous training loop, 온프레미스 AI 엔진 완성 |
 | 6 (선택) | OSS → hosted SaaS | AGPL v3 공개, Next.js + Auth.js + Stripe, multi-tenant, BYOK. §14 참조 |
 
-## 13. 현재 진행 상태 (2026-05-18 기준)
+## 13. 현재 진행 상태 (2026-05-19 기준)
 
 > 자세한 backlog 와 phase 별 완료 항목 / 미구현 항목은 `docs/features_backlog.md` 가
 > source of truth. 여기는 큰 그림만.
 
-### Phase 2.5 wave-3 (2026-05-18, 진행 중) — 단일 self-contained AI engine 전환
+### Phase 2.5 wave-4 (2026-05-18 ~ 19, 완료) — 카테고리 레이어 + Union 그래프 + Theme
+
+오랜 한 세션 동안 한꺼번에 완수된 큰 변화. **3-tier 데이터/UI 구조 (category → topic →
+item)** 와 **유니온 스테이션 hub-spoke 그래프** 패턴이 핵심.
+
+**Backend**:
+- ✅ **fallback topic 흐름** (`auto_link_topics`) — external_id 없는 url 도 자체 topic
+  (`url:item:<uuid>`) 자동 생성. 그래프에 모든 자료가 일급 시민으로 등장.
+  기존 193 orphan items 에 backfill topic 생성 완료.
+- ✅ **categories 신규 스키마** — `categories` (slug/label/synonyms/color/pinned) +
+  `topic_categories` M:N. migrate_schema 적용.
+- ✅ **`backend/api/categories.py`** — GET list / detail / POST upsert / manual link.
+- ✅ **`backend/jobs/auto_link_categories.py`** — items.tags 빈도 ≥ 3 분석 → 카테고리
+  자동 시드 + topic ↔ category 자동 link. 61 카테고리 + 796 link 생성.
+- ✅ **3-tier graph endpoint** — `/graph/categories` (전체), `/graph/category/{slug}`
+  (카테고리 expand), `/graph/topic/{uuid}` (토픽 expand). cytoscape 호환.
+- ✅ **`find_category_by_slug` 보강** — topic_count / item_count 동봉. expand 응답의
+  카테고리 노드 0/0 표시 버그 해결.
+- ✅ **caption append 정책** — url/pdf/github/youtube/document/telegram 모든 ingest 에
+  `caption` 파라미터. `append_item_user_notes` 헬퍼 (idempotent + timestamp 구분자).
+  같은 URL 새 caption 시 user_notes 에 append (덮어쓰기 X).
+- ✅ **url-only fallback fix** — result key `error` → `fetch_error` (watcher 의
+  is_ingest_successful 가 url-only 도 success 로 인식). 자동 user_notes 메모 추가
+  ("⚠️ 본문 자동 추출 실패 (HTTP …). archive.org 시도 권장").
+- ✅ **YouTube `/live/` URL pattern 지원** + **GitHub owner-only URL fallback** —
+  6개 실패 텔레그램 메시지 자동 처리.
+- ✅ **cross-modal topic title 차용 버그 fix** — github README 의 arxiv 링크 30개가
+  각각 별 topic 만들면서 다 repo title 차용하던 데이터 중복 (line 602: `title or
+  x.slug` → `x.slug`). 181 topics title cleanup.
+- ✅ **vLLM 가동** — Ollama → vLLM 전환 (qwen2.5:14b 3분 → vllm/Qwen2.5-7B 7초, **30x
+  빠름**). docker-compose `profile: vllm`, healthcheck start_period 30분 (모델 다운로드
+  시간). `default_llm_provider: ollama → vllm`. 249 NULL summary 자동 backfill.
+- ✅ **graph limit 100 → 5000** (`/graph/topics` max 20000).
+
+**Frontend (Next.js 16 + React 19 + Tailwind v4)**:
+- ✅ **i18n 시스템** — `LocaleProvider` + `useT()` hook, ko/en dict, localStorage 보존.
+  Header 의 [한/EN] 토글로 전체 UI 언어 즉시 변경.
+- ✅ **TopicsTree 3-tier 트리** — 카테고리 (▸/▾ chevron) → 토픽 (chevron) → 아이템
+  sub-list (각 자료 라벨 + source_type 칩 + unread/메모 indicator).
+- ✅ **색상 그룹화** (`lib/colors.ts`) — 사용자 요구 그룹별 일관 색:
+  📄 Articles=녹 (pdf/arxiv/document, arxiv/doi/paperswithcode) ·
+  🎥 Video=빨 (youtube/youtube_playlist, yt/ytpl) ·
+  💻 Code=보 (github) ·
+  🌐 Web=파 (url) ·
+  💬 Note=시안 (telegram/slack/manual).
+- ✅ **Legend 재구성** — 그룹별 섹션 + 그룹 헤더 색 dot + 외부 ID 없는 토픽 (orange)
+  안내 + **선택 상태 시각 효과 안내** (selected=원래 색+1.7×, related=원래 색+1.3×,
+  non-related=어둡게). 좌상단 통계 라벨 아래 inline 배치.
+- ✅ **selected/related/non-related 시각** — 흰색 강제 X, 원래 색 정체성 유지 +
+  사이즈 (1.7×/1.3×/1.0×) + non-related 65% darken.
+- ✅ **양방향 highlight (`relatedIds`)** — sidebar ↔ graph 동기화. selected 의 같은
+  묶음 (topic + items, category + topics) 모두 함께 강조. 자동 카테고리 expand +
+  scrollIntoView.
+- ✅ **Union 그래프 (`mergeGraph`)** — 유니온 스테이션 hub-spoke. 클릭 시 그래프
+  교체 X, 그 노드의 친구들을 기존에 추가. 카테고리·토픽 여러 개 차례로 클릭하면
+  그래프 점진 확장 + cross-category 시각화.
+- ✅ **컨텍스트 유지 분기** — graph 에 이미 친구 있으면 highlight만 (fetch 안 함),
+  없으면 union fetch. handleNodeClick / handleSidebarSelect 통일 — graph 클릭과
+  sidebar 클릭이 같은 동작.
+- ✅ **NodeDetails 컴포넌트 신규** — item/topic/category 통합 detail 패널 + 외부
+  링크 새창 (target=_blank).
+- ✅ **ItemDetails 자동 expand** — `itemId` 변경 시 collapsed=false (사용자가 클릭
+  의도).
+- ✅ **navigation history** — "← 이전" (한 단계 뒤로) / "← 전체" (시작 view + history
+  초기화) 두 버튼.
+- ✅ **ThemeToggle 컴포넌트 신규** — ☀️ light / 🌙 dark / 🖥 system 3단계.
+  localStorage 보존, OS prefers-color-scheme 실시간 반영, flash-of-wrong-theme 방지
+  (layout.tsx head 의 inline script). Tailwind v4 `@custom-variant dark` 로
+  `.dark` 클래스 기반.
+- ✅ **Next.js devIndicators 끔** — 좌하단 N 버튼 (i18n 컨트롤 불가) 제거.
+- ✅ **fullId 일관성 fix** — TopicsTree mismatch 4건 (`assignedTopicIds` raw vs
+  `t.id` fullId, `${type}:${cat.id}` 이중 prefix 등). 사이드바 토픽/카테고리/아이템
+  highlight + sub-list 표시가 동작.
+- ✅ **graph 카메라 zoom 안정성** — force layout 미완료 노드 클릭 시 250ms 간격 6회
+  재시도.
+
+**데이터 정리**:
+- 193 orphan items → fallback topic 자동 생성
+- 181 topics title cleanup (cross-modal 차용 버그)
+- 66 categories (Houdini 포함, 빈 카테고리 0)
+
+**테스트**:
+- `tests/test_telegram_parser.py` — `_strip_urls_for_caption` 5 케이스 추가
+- `tests/integration/test_user_notes_append.py` 신규 — 4 case (빈 노트, append,
+  idempotent, no-op)
+
+**새 파일들**:
+- `backend/api/categories.py`
+- `backend/jobs/auto_link_categories.py`
+- `frontend_v2/components/NodeDetails.tsx`
+- `frontend_v2/components/ThemeToggle.tsx`
+
+### Phase 2.5 wave-3 (2026-05-18, 완료) — 단일 self-contained AI engine 전환
 
 체크리스트 (실 시간 = 약 1세션, 각 step 마다 commit, 194 tests):
 - ✅ **§3 재정의** — "LinkMind ↔ OpenClaw" 두 시스템 모델 폐기, 단일
@@ -376,6 +468,19 @@ note 저장 / **ingest 성공 시 채널에서 메시지 자동 삭제** (inbox 
 (`_clean_readme_html`), PDF Title placeholder 거름 (`_extract_pdf_title`).
 
 ### 다음에 할 일
+
+**Phase 2.5 wave-5 후보 (다음 세션)**:
+- ⏳ **cross-modality matching (D 작업)** — 같은 자료의 paper + code + video 가 별
+  topic 으로 흩어진 케이스 자동 묶기. 단서: title 유사도, README 안 paper link,
+  arxiv abstract 의 github link, 사용자 caption 매칭 등. 옵션 (a) LLM cluster job,
+  (b) 사용자 manual merge UI, (c) external_id 추출 강화.
+- ⏳ **arxiv title 재시드** — wave-4 의 cross-modal title fix 후 arxiv:* topic 들의
+  title 이 slug 그대로. `seed_arxiv_metadata` job 재실행으로 진짜 paper title 보강.
+- ⏳ **llm_wiki 아키텍처 도입** — karpathy 의 llm_wiki + vlm_wiki + multi-agent +
+  자가학습. 일반 RAG 대신 wiki 페이지 단위 (topic = wiki 페이지). [[project-llm-wiki-arch]]
+  memory 참조.
+- ⏳ **카테고리 UI 편집** — synonyms 추가, 색 지정, pinned 토글, manual link/unlink.
+- ⏳ Theme dark/light 색 미세 조정 (사용자 검증 후).
 
 **짧은 follow-up** ✅ 완료 (2026-05-16):
 - ✅ amber 3 modality description 검증 — 3 item (code + paper + project page) 다 반영 확인

@@ -471,15 +471,25 @@ note 저장 / **ingest 성공 시 채널에서 메시지 자동 삭제** (inbox 
 
 **Phase 2.5 wave-5 후보 — 권장 순서** (2026-05-19 세션 마무리, 다음 세션 진입점):
 
+> **사용자 결정 (2026-05-19)**: 큰 그림 먼저 — **llm_wiki 아키텍처를 먼저 잡으면
+> A/B/D 가 그 그림 안에서 일관되게 흡수됨**. 안 그러면 지금 A 를 해도 wiki 모델이
+> 바뀌면 또 손봐야 하는 삽질 발생.
+
 | 순서 | 항목 | 규모 | 이유 |
 |---|---|---|---|
-| **A** | **D9 — arxiv title 재시드** | 작음 (1세션) | wave-4 의 cross-modal title fix 후 arxiv:* topic 들의 title 이 slug 그대로. `seed_arxiv_metadata` job 재실행으로 진짜 paper title 보강. 빠른 마무리. |
-| **B** | **D11 — 카테고리 UI 편집** + 잔여 버그 fix | 중 | synonyms 추가/색 지정/pinned 토글/manual link/unlink. 사용자가 사이드바에서 직접 카테고리 정리. |
-| **C** | **D10 — llm_wiki 아키텍처 도입** | 큼 (여러 세션) | karpathy 의 llm_wiki + vlm_wiki + multi-agent + 자가학습. 일반 RAG 대신 wiki 페이지 단위. **이게 사용자가 만드시려는 personal AI 의 진짜 정체성**. [[project-llm-wiki-arch]] memory 참조. |
-| **D** | **D8 — cross-modality matching** | 중 | 같은 자료의 paper + code + video 자동 묶기. (a) LLM cluster job, (b) 사용자 manual merge UI, (c) external_id 추출 강화. |
-| E | Theme dark/light 색 미세 조정 | 작음 | 사용자 검증 후 |
+| **1** | **D10 — llm_wiki 아키텍처 도입** (먼저!) | 큼 (여러 세션) | karpathy 의 llm_wiki + vlm_wiki + multi-agent + 자가학습. 일반 RAG 대신 **topic = wiki 페이지** 단위. **이게 LinkMind 의 진짜 정체성** ([[project-llm-wiki-arch]] memory). 첫 세션은 plan 단계 — `external/karpathy/llm_wiki/` 분석 + LinkMind 의 items/topics/categories 매핑 + `backend/agents/` 디렉토리 설계 + multi-agent 흐름 (retriever / writer / critic / fact-checker / linker) + `/wiki/{slug}` endpoint 윤곽. |
+| **2** | **D9 — arxiv title 재시드** | 작음 | wiki 페이지 정체성 잡힌 후라야 title 보강 의미 (지금 재시드해도 wiki 모델 따라 다시 손봄). `seed_arxiv_metadata` job 재실행. |
+| **3** | **D11 — 카테고리 UI 편집** | 중 | wiki 페이지 구조 정해진 후 색인 (categories) UI 가 자연스럽게 따라옴. synonyms 추가 / 색 지정 / pinned / manual link. |
+| **4** | **D8 — cross-modality matching** | 중 | wiki 모델 안에서 자연스럽게 흡수 — 한 wiki 페이지에 paper + code + video 가 modality 섹션. 별도 알고리즘보다 wiki 페이지 merge UI 가 더 효과적. |
+| 5 | Theme dark/light 색 미세 조정 | 작음 | 사용자 검증 후 |
 
-A → B → C 순이 자연스러움 (작은 마무리 → UX 보강 → 핵심 진화).
+**llm_wiki 첫 세션 (다음 세션) 진행 안 (윤곽)**:
+1. `external/karpathy/llm_wiki/` 분석 — 코드 구조 + 데이터 모델 + 검색·응답 흐름
+2. LinkMind 매핑: topic → wiki 페이지 / categories → wiki 색인 / items → wiki 페이지 source
+3. `docs/llm_wiki_design.md` 설계 문서 작성 — 데이터 schema 변경 (필요 시) + agent 구조 + API 윤곽
+4. `backend/agents/` 신규 디렉토리 — retriever (기존 검색 흐름) + writer (응답 생성) + critic (사실 확인) 3개 우선
+5. `/wiki/{topic_slug}` endpoint prototype — 한 wiki 페이지의 multi-modality 통합 view
+6. 사용자 검증 → 다음 단계 결정
 
 **Slack 워크스페이스 backfill (Phase C wave-2) — 사용자 결정 필요**:
 - 사용자가 Slack 구독 곧 해제 예정 (2026-05-16 알림) → "일회성 backfill" 만 의미.

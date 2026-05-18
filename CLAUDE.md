@@ -293,39 +293,40 @@ external/{openclaw,hermes-agent,hermes-webui}/  # gitignored 벤치마킹 참조
 
 ### Phase 2.5 wave-3 (2026-05-18, 진행 중) — 단일 self-contained AI engine 전환
 
-오늘 작업 단계 (각 step 마다 commit):
-- ✅ **Day 1: §3 재정의** — "LinkMind ↔ OpenClaw" 두 시스템 모델 폐기, 단일
+체크리스트 (실 시간 = 약 1세션, 각 step 마다 commit, 194 tests):
+- ✅ **§3 재정의** — "LinkMind ↔ OpenClaw" 두 시스템 모델 폐기, 단일
   self-contained 시스템 + external/ 는 벤치마킹 참조. §14 신규 (AGPL v3 + Privacy
   5원칙 + SaaS Phase 6 path). docs/agent_architecture.md 신규.
-- ✅ **Day 2-3: ChannelAgent ABC** — `ai_agents/base.py` + telegram_inbox_watcher
-  를 TelegramChannelAgent 로 리팩토링. 11 tests 신규.
-- ✅ **Day 4: items 스키마 확장** — user_notes / user_notes_updated_at /
-  is_read / read_at 컬럼 + idx_items_unread partial index. migrate_schema.py
-  idempotent runner. GET/PATCH /items/{id} API. **user_notes 변경 시 BackgroundTask
-  로 LLM 키워드 추출 → items.tags 자동 병합** (한국어 자유 문체 지원). 23 tests 신규.
-- ✅ **Day 5/1: 다양 포맷 텍스트 추출 통합 모듈** — `backend/ingest/document/`
-  (PDF 재사용 + DOCX/PPTX/TXT/MD). python-docx + python-pptx + charset-normalizer
-  추가. 한국어 cp949 인코딩 우선. 17 tests 신규.
-- ✅ **Day 5/2: 텔레그램 첨부 자동 ingest** — `ingest_document()` 진입점 추가
-  (PDF ingest 패턴 재사용 + 모든 포맷). TelegramMessage 에 `attachments` 필드,
-  ingest_telegram_message 의 첨부 분기, caption → user_notes 자동 저장,
-  ai_agents/telegram_inbox_watcher 가 Telethon `download_media` 호출 → 임시
-  디렉토리 → ingest 후 tmp 정리, ChannelAgent.is_ingest_successful 확장 —
-  attachments 까지 모두 error 없어야만 메시지 삭제. 5 케이스 신규.
-- ✅ **Day 5-extra: VOLUMES_ROOT env** — compose 의 모든 bind mount 가 한 env
-  변수로 통제 (사용자가 큰 디스크로 데이터 이동 가능). STORAGE_LOCAL_PATH 보강.
-- 🚫 **Day 5/3: backend/ingest auto dispatcher 정리** — SKIP 결정 (동작 영향 없는
-  깔끔함 작업, graph UI 우선)
-- ✅ **Day 6-9: graph backend endpoint** — `backend/api/graph.py` 신규,
-  cytoscape.js 호환 JSON 반환. `GET /graph/topics` (전체 topic + 그 안의 item +
-  엣지), `GET /graph/search?q=` (Postgres FTS 기반 subset), `GET /graph/item/{id}`
-  (한 item 중심 이웃). repository 에 list_items_summary / list_item_topic_links
-  / search_items_by_text 추가. Pydantic GraphNode/GraphEdge/GraphResponse.
-  pure 함수 (topic_to_node / item_to_node / link_to_edge / build_graph_response)
-  17 tests 신규, 194 통과.
-- ⏳ Day 10-13: Next.js 14 graph UI (frontend_v2/) + modality viewer
-  (user_notes 편집, is_read 토글, PDF figures, YouTube/GitHub/URL)
-- ⏳ Day 14: end-to-end 통합 + 데모 데이터 검증
+- ✅ **ChannelAgent ABC** — `ai_agents/base.py` + telegram_inbox_watcher 를
+  TelegramChannelAgent 로 리팩토링. 11 tests.
+- ✅ **items 스키마 확장** — user_notes / user_notes_updated_at / is_read /
+  read_at 컬럼 + idx_items_unread partial index. migrate_schema.py idempotent
+  runner. GET/PATCH /items/{id} API. **user_notes 변경 시 BackgroundTask 로
+  LLM 키워드 추출 → items.tags 자동 병합** (한국어 자유 문체 지원). 23 tests.
+- ✅ **다양 포맷 텍스트 추출 통합 모듈** — `backend/ingest/document/` (PDF
+  재사용 + DOCX/PPTX/TXT/MD). python-docx + python-pptx + charset-normalizer.
+  한국어 cp949 인코딩 우선. 17 tests.
+- ✅ **텔레그램 첨부 자동 ingest** — `ingest_document()` 진입점. TelegramMessage
+  에 `attachments` 필드, ingest_telegram_message 의 첨부 분기, caption →
+  user_notes 자동, Telethon `download_media` 호출 → 임시 디렉토리 → ingest 후
+  tmp 정리. ChannelAgent.is_ingest_successful 확장 — attachments 까지 모두
+  error 없어야만 메시지 삭제. 5 케이스.
+- ✅ **VOLUMES_ROOT env** — compose 의 모든 bind mount 가 한 env 변수로 통제
+  (사용자가 큰 디스크로 데이터 이동 가능). STORAGE_LOCAL_PATH 보강.
+- 🚫 **backend/ingest auto dispatcher 정리** — SKIP (동작 영향 없는 깔끔함 작업).
+- ✅ **graph backend endpoint** — `backend/api/graph.py`, cytoscape.js 호환
+  JSON. `GET /graph/topics` / `/graph/search?q=` (FTS) / `/graph/item/{id}` (이웃).
+  repository: list_items_summary / list_item_topic_links / search_items_by_text.
+  Pydantic GraphNode/GraphEdge/GraphResponse. 17 tests.
+- ✅ **Next.js 16 graph UI** (frontend_v2/, Tailwind 4 + cytoscape 3.33) —
+  세 패널 (TopicsTree | GraphView | ItemDetails). topic = orange 원, item =
+  source_type 별 색상 (PDF=red / URL=blue / GitHub=purple / YouTube=darkred /
+  arxiv=green / document=amber / telegram=cyan), unread=yellow border, has_notes=
+  double border. 노드 클릭 → /graph/item/{id} 이웃 graph + 우측 ItemDetails
+  로딩. user_notes textarea + 저장 (PATCH → 백그라운드 LLM 키워드), is_read
+  토글 버튼, PDF figures grid (attachments role=figure), YouTube thumbnail,
+  GitHub repo 링크, raw_content expandable. 한국어 UI. build 통과.
+- ⏳ end-to-end 통합 + 데모 데이터 검증
 
 ### 구현 완료 (현재 main 브랜치)
 

@@ -469,18 +469,35 @@ note 저장 / **ingest 성공 시 채널에서 메시지 자동 삭제** (inbox 
 
 ### 다음에 할 일
 
-**Phase 2.5 wave-5 후보 (다음 세션)**:
-- ⏳ **cross-modality matching (D 작업)** — 같은 자료의 paper + code + video 가 별
-  topic 으로 흩어진 케이스 자동 묶기. 단서: title 유사도, README 안 paper link,
-  arxiv abstract 의 github link, 사용자 caption 매칭 등. 옵션 (a) LLM cluster job,
-  (b) 사용자 manual merge UI, (c) external_id 추출 강화.
-- ⏳ **arxiv title 재시드** — wave-4 의 cross-modal title fix 후 arxiv:* topic 들의
-  title 이 slug 그대로. `seed_arxiv_metadata` job 재실행으로 진짜 paper title 보강.
-- ⏳ **llm_wiki 아키텍처 도입** — karpathy 의 llm_wiki + vlm_wiki + multi-agent +
-  자가학습. 일반 RAG 대신 wiki 페이지 단위 (topic = wiki 페이지). [[project-llm-wiki-arch]]
-  memory 참조.
-- ⏳ **카테고리 UI 편집** — synonyms 추가, 색 지정, pinned 토글, manual link/unlink.
-- ⏳ Theme dark/light 색 미세 조정 (사용자 검증 후).
+**Phase 2.5 wave-5 후보 — 권장 순서** (2026-05-19 세션 마무리, 다음 세션 진입점):
+
+| 순서 | 항목 | 규모 | 이유 |
+|---|---|---|---|
+| **A** | **D9 — arxiv title 재시드** | 작음 (1세션) | wave-4 의 cross-modal title fix 후 arxiv:* topic 들의 title 이 slug 그대로. `seed_arxiv_metadata` job 재실행으로 진짜 paper title 보강. 빠른 마무리. |
+| **B** | **D11 — 카테고리 UI 편집** + 잔여 버그 fix | 중 | synonyms 추가/색 지정/pinned 토글/manual link/unlink. 사용자가 사이드바에서 직접 카테고리 정리. |
+| **C** | **D10 — llm_wiki 아키텍처 도입** | 큼 (여러 세션) | karpathy 의 llm_wiki + vlm_wiki + multi-agent + 자가학습. 일반 RAG 대신 wiki 페이지 단위. **이게 사용자가 만드시려는 personal AI 의 진짜 정체성**. [[project-llm-wiki-arch]] memory 참조. |
+| **D** | **D8 — cross-modality matching** | 중 | 같은 자료의 paper + code + video 자동 묶기. (a) LLM cluster job, (b) 사용자 manual merge UI, (c) external_id 추출 강화. |
+| E | Theme dark/light 색 미세 조정 | 작음 | 사용자 검증 후 |
+
+A → B → C 순이 자연스러움 (작은 마무리 → UX 보강 → 핵심 진화).
+
+**Slack 워크스페이스 backfill (Phase C wave-2) — 사용자 결정 필요**:
+- 사용자가 Slack 구독 곧 해제 예정 (2026-05-16 알림) → "일회성 backfill" 만 의미.
+- 모듈은 Telegram 패턴 그대로 (`SlackMessage` + `ingest_slack_message` + `ingest_slack_export`). slackdump 셋업은 이미 어제 검증됨.
+- 결정 옵션: **(a) 구독 살아있는 동안 1세션 분량 (4~6시간) 으로 backfill 끝내기**, (b) 그냥 dead 코드로 두기. 다음 세션 초반에 결정.
+
+**자가학습 / AI agent 로드맵 (CLAUDE.md §12 + project_llm_wiki_arch memory)**:
+
+| 단계 | 내용 | 시기 |
+|---|---|---|
+| **A. 데이터 누적** (지금) | wave-4 까지 — items 모으고 categories/topics 구조화. **학습 데이터 raw 보존** 이 1차 목표 | 진행 중 |
+| **B. feedback 인프라** | feedback 테이블 — `/ask` 답변에 👍/👎/수정 메모, fine-tuning data 적립 | wave-5~6 |
+| **C. multi-agent (llm_wiki)** | hermes-agent 패턴 — retriever / writer / critic / fact-checker / linker 역할 분담. `backend/agents/` 신규 | wave-6~7 |
+| **D. dataset exporter** | feedback + raw + summary → JSONL (Phase 4 sVLL 학습 입력) | Phase 3 후반 |
+| **E. sVLL LoRA 파인튜닝** | LLaMA-Factory + Qwen2-VL. 사용자 본인 데이터로 본인 모델 | Phase 4 |
+| **F. Continuous training loop** | 자가학습 — feedback → fine-tune → 배포 → feedback 반복 | Phase 5 (최종 목표) |
+
+즉 자가학습은 "지금 학습 데이터 잘 쌓기" + "feedback 인프라 만들기" 부터. sVLL 파인튜닝은 Phase 4 (몇 달 후). 학습 데이터의 양과 질이 결정적.
 
 **짧은 follow-up** ✅ 완료 (2026-05-16):
 - ✅ amber 3 modality description 검증 — 3 item (code + paper + project page) 다 반영 확인

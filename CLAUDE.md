@@ -471,33 +471,37 @@ note 저장 / **ingest 성공 시 채널에서 메시지 자동 삭제** (inbox 
 
 **Phase 2.5 wave-5 후보 — 권장 순서** (2026-05-19 세션 마무리, 다음 세션 진입점):
 
-> **사용자 결정 (2026-05-19)**: 큰 그림 먼저 — **llm_wiki 아키텍처를 먼저 잡으면
-> A/B/D 가 그 그림 안에서 일관되게 흡수됨**. 안 그러면 지금 A 를 해도 wiki 모델이
-> 바뀌면 또 손봐야 하는 삽질 발생.
+> **사용자 결정 (2026-05-19)**: Slack 먼저 (시한 리스크) → llm_wiki (큰 그림). 작은
+> 마무리 (arxiv title / 카테고리 UI / cross-modality) 는 llm_wiki 모델이 정해진 후
+> 그 그림 안에서 일관되게 흡수되도록.
 
 | 순서 | 항목 | 규모 | 이유 |
 |---|---|---|---|
-| **1** | **D10 — llm_wiki 아키텍처 도입** (먼저!) | 큼 (여러 세션) | karpathy 의 llm_wiki + vlm_wiki + multi-agent + 자가학습. 일반 RAG 대신 **topic = wiki 페이지** 단위. **이게 LinkMind 의 진짜 정체성** ([[project-llm-wiki-arch]] memory). 첫 세션은 plan 단계 — `external/karpathy/llm_wiki/` 분석 + LinkMind 의 items/topics/categories 매핑 + `backend/agents/` 디렉토리 설계 + multi-agent 흐름 (retriever / writer / critic / fact-checker / linker) + `/wiki/{slug}` endpoint 윤곽. |
-| **2** | **D9 — arxiv title 재시드** | 작음 | wiki 페이지 정체성 잡힌 후라야 title 보강 의미 (지금 재시드해도 wiki 모델 따라 다시 손봄). `seed_arxiv_metadata` job 재실행. |
-| **3** | **D11 — 카테고리 UI 편집** | 중 | wiki 페이지 구조 정해진 후 색인 (categories) UI 가 자연스럽게 따라옴. synonyms 추가 / 색 지정 / pinned / manual link. |
-| **4** | **D8 — cross-modality matching** | 중 | wiki 모델 안에서 자연스럽게 흡수 — 한 wiki 페이지에 paper + code + video 가 modality 섹션. 별도 알고리즘보다 wiki 페이지 merge UI 가 더 효과적. |
+| **0** | **C wave-2 — Slack 일회성 backfill** (먼저!) | ~6시간 | 사용자가 Slack 구독 곧 해제 예정 → 시한 리스크 (해제 후엔 영원히 못 가져옴). raw-first (§2) 라 wiki 모델 무관하게 안전, 오히려 wiki 설계 시 실 데이터 (thread + 첨부 + 다양 채널) 로 검증 가능. 모듈은 Telegram 패턴 그대로 (`SlackMessage` + `ingest_slack_message` + `ingest_slack_export`). slackdump 셋업 이미 검증됨. |
+| **1** | **D10 — llm_wiki 아키텍처 도입** | 큼 (여러 세션) | karpathy 의 llm_wiki + vlm_wiki + multi-agent + 자가학습. 일반 RAG 대신 **topic = wiki 페이지** 단위. **이게 LinkMind 의 진짜 정체성** ([[project-llm-wiki-arch]] memory). 첫 세션은 plan 단계 — `external/karpathy/llm_wiki/` 분석 + LinkMind 의 items/topics/categories 매핑 + `backend/agents/` 디렉토리 설계 + multi-agent 흐름 (retriever / writer / critic / fact-checker / linker) + `/wiki/{slug}` endpoint 윤곽. |
+| **2** | **D9 — arxiv title 재시드** | 작음 | wiki 페이지 정체성 잡힌 후라야 title 보강 의미. `seed_arxiv_metadata` job 재실행. |
+| **3** | **D11 — 카테고리 UI 편집** | 중 | wiki 페이지 구조 정해진 후 색인 UI 가 자연 따라옴. synonyms / color / pinned / manual link. |
+| **4** | **D8 — cross-modality matching** | 중 | wiki 모델 안에서 흡수 — 한 wiki 페이지에 paper + code + video 가 modality 섹션. wiki 페이지 merge UI 가 더 효과적. |
 | 5 | Theme dark/light 색 미세 조정 | 작음 | 사용자 검증 후 |
 
-**llm_wiki 첫 세션 (다음 세션) 진행 안 (윤곽)**:
+**Slack backfill (0 순위) 진행 안**:
+1. `bash scripts/slack_export.sh` — workspace 전체 export (files=true), `archive/slack_export/full_<date>/` + `latest` symlink 자동
+2. `backend/ingest/slack/__init__.py` + `export_parser.py` 작성 (Telegram 패턴 일관):
+   - `SlackMessage` dataclass + `ingest_slack_message` (단일) + `ingest_slack_export` (전체 폴더)
+   - thread 처리 (`thread_ts` → reply 묶음 → 한 item)
+   - URL 자동 라우팅 (telegram 흐름 재사용)
+   - 첨부 다운로드
+3. CLI: `python -m backend.ingest.slack <export_dir> [--channel <name>]`
+4. 단위 테스트 + 작은 fixture (채널 디렉토리 + 한 JSON 모사)
+5. 검증: `공부-컴퓨터비전` 단일 채널 → 워크스페이스 전체
+
+**D10 llm_wiki 첫 세션 진행 안 (Slack 끝난 후)**:
 1. `external/karpathy/llm_wiki/` 분석 — 코드 구조 + 데이터 모델 + 검색·응답 흐름
-2. LinkMind 매핑: topic → wiki 페이지 / categories → wiki 색인 / items → wiki 페이지 source
-3. `docs/llm_wiki_design.md` 설계 문서 작성 — 데이터 schema 변경 (필요 시) + agent 구조 + API 윤곽
-4. `backend/agents/` 신규 디렉토리 — retriever (기존 검색 흐름) + writer (응답 생성) + critic (사실 확인) 3개 우선
+2. LinkMind 매핑: topic → wiki 페이지 / categories → wiki 색인 / items → wiki source
+3. `docs/llm_wiki_design.md` 설계 문서 — schema 변경 (필요 시) + agent 구조 + API 윤곽
+4. `backend/agents/` 신규 — retriever / writer / critic 3개 우선
 5. `/wiki/{topic_slug}` endpoint prototype — 한 wiki 페이지의 multi-modality 통합 view
 6. 사용자 검증 → 다음 단계 결정
-
-**Slack 워크스페이스 backfill (Phase C wave-2) — llm_wiki 보다 먼저** (사용자 결정 2026-05-19):
-- 사용자가 Slack 구독 곧 해제 예정 (2026-05-16 알림) → 시한 리스크. 구독 해제 후엔 영원히 못 가져옴.
-- raw-first 원칙 (§2) 상 items.raw_content + tags + summary 는 어떤 wiki 모델에서도
-  보존됨 — 미리 입력해도 wiki 구현 시 자동 흡수 (wave-4 의 193 orphan items 자동 흡수 사례 참고).
-- 오히려 미리 입력하면 wiki 설계 시 실 데이터 (Slack thread + 첨부 + 다양한 채널) 로 검증 가능.
-- 모듈은 Telegram 패턴 그대로 (`SlackMessage` + `ingest_slack_message` + `ingest_slack_export`). slackdump 셋업 이미 검증됨.
-- **권장 진행**: 다음 세션 초반 1세션 (~6시간) backfill → 그 후 llm_wiki 본격 작업.
 
 **자가학습 / AI agent 로드맵 (CLAUDE.md §12 + project_llm_wiki_arch memory)**:
 

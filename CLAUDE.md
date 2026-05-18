@@ -311,12 +311,21 @@ external/{openclaw,hermes-agent,hermes-webui}/  # gitignored 벤치마킹 참조
   ingest_telegram_message 의 첨부 분기, caption → user_notes 자동 저장,
   ai_agents/telegram_inbox_watcher 가 Telethon `download_media` 호출 → 임시
   디렉토리 → ingest 후 tmp 정리, ChannelAgent.is_ingest_successful 확장 —
-  attachments 까지 모두 error 없어야만 메시지 삭제 (사용자 가드레일 "하나라도
-  누락이면 삭제 X"). 5 attachments 케이스 신규. 177 tests 통과.
-- ⏳ Day 5/3: backend/ingest 정리 (auto dispatcher 명확화 — 짧게)
-- ⏳ Day 6-9: graph backend endpoint (cytoscape JSON)
-- ⏳ Day 10-13: Next.js 14 graph UI + modality viewer
-- ⏳ Day 14: end-to-end 통합
+  attachments 까지 모두 error 없어야만 메시지 삭제. 5 케이스 신규.
+- ✅ **Day 5-extra: VOLUMES_ROOT env** — compose 의 모든 bind mount 가 한 env
+  변수로 통제 (사용자가 큰 디스크로 데이터 이동 가능). STORAGE_LOCAL_PATH 보강.
+- 🚫 **Day 5/3: backend/ingest auto dispatcher 정리** — SKIP 결정 (동작 영향 없는
+  깔끔함 작업, graph UI 우선)
+- ✅ **Day 6-9: graph backend endpoint** — `backend/api/graph.py` 신규,
+  cytoscape.js 호환 JSON 반환. `GET /graph/topics` (전체 topic + 그 안의 item +
+  엣지), `GET /graph/search?q=` (Postgres FTS 기반 subset), `GET /graph/item/{id}`
+  (한 item 중심 이웃). repository 에 list_items_summary / list_item_topic_links
+  / search_items_by_text 추가. Pydantic GraphNode/GraphEdge/GraphResponse.
+  pure 함수 (topic_to_node / item_to_node / link_to_edge / build_graph_response)
+  17 tests 신규, 194 통과.
+- ⏳ Day 10-13: Next.js 14 graph UI (frontend_v2/) + modality viewer
+  (user_notes 편집, is_read 토글, PDF figures, YouTube/GitHub/URL)
+- ⏳ Day 14: end-to-end 통합 + 데모 데이터 검증
 
 ### 구현 완료 (현재 main 브랜치)
 

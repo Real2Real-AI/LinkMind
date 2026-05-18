@@ -491,10 +491,13 @@ note 저장 / **ingest 성공 시 채널에서 메시지 자동 삭제** (inbox 
 5. `/wiki/{topic_slug}` endpoint prototype — 한 wiki 페이지의 multi-modality 통합 view
 6. 사용자 검증 → 다음 단계 결정
 
-**Slack 워크스페이스 backfill (Phase C wave-2) — 사용자 결정 필요**:
-- 사용자가 Slack 구독 곧 해제 예정 (2026-05-16 알림) → "일회성 backfill" 만 의미.
-- 모듈은 Telegram 패턴 그대로 (`SlackMessage` + `ingest_slack_message` + `ingest_slack_export`). slackdump 셋업은 이미 어제 검증됨.
-- 결정 옵션: **(a) 구독 살아있는 동안 1세션 분량 (4~6시간) 으로 backfill 끝내기**, (b) 그냥 dead 코드로 두기. 다음 세션 초반에 결정.
+**Slack 워크스페이스 backfill (Phase C wave-2) — llm_wiki 보다 먼저** (사용자 결정 2026-05-19):
+- 사용자가 Slack 구독 곧 해제 예정 (2026-05-16 알림) → 시한 리스크. 구독 해제 후엔 영원히 못 가져옴.
+- raw-first 원칙 (§2) 상 items.raw_content + tags + summary 는 어떤 wiki 모델에서도
+  보존됨 — 미리 입력해도 wiki 구현 시 자동 흡수 (wave-4 의 193 orphan items 자동 흡수 사례 참고).
+- 오히려 미리 입력하면 wiki 설계 시 실 데이터 (Slack thread + 첨부 + 다양한 채널) 로 검증 가능.
+- 모듈은 Telegram 패턴 그대로 (`SlackMessage` + `ingest_slack_message` + `ingest_slack_export`). slackdump 셋업 이미 검증됨.
+- **권장 진행**: 다음 세션 초반 1세션 (~6시간) backfill → 그 후 llm_wiki 본격 작업.
 
 **자가학습 / AI agent 로드맵 (CLAUDE.md §12 + project_llm_wiki_arch memory)**:
 

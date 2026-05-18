@@ -286,10 +286,30 @@ external/{openclaw,hermes-agent,hermes-webui}/  # gitignored 벤치마킹 참조
 | 5 | | Continuous training loop, 온프레미스 AI 엔진 완성 |
 | 6 (선택) | OSS → hosted SaaS | AGPL v3 공개, Next.js + Auth.js + Stripe, multi-tenant, BYOK. §14 참조 |
 
-## 13. 현재 진행 상태 (2026-05-16 기준)
+## 13. 현재 진행 상태 (2026-05-18 기준)
 
 > 자세한 backlog 와 phase 별 완료 항목 / 미구현 항목은 `docs/features_backlog.md` 가
 > source of truth. 여기는 큰 그림만.
+
+### Phase 2.5 wave-3 (2026-05-18, 진행 중) — 단일 self-contained AI engine 전환
+
+오늘 작업 단계 (각 step 마다 commit):
+- ✅ **Day 1: §3 재정의** — "LinkMind ↔ OpenClaw" 두 시스템 모델 폐기, 단일
+  self-contained 시스템 + external/ 는 벤치마킹 참조. §14 신규 (AGPL v3 + Privacy
+  5원칙 + SaaS Phase 6 path). docs/agent_architecture.md 신규.
+- ✅ **Day 2-3: ChannelAgent ABC** — `ai_agents/base.py` + telegram_inbox_watcher
+  를 TelegramChannelAgent 로 리팩토링. 11 tests 신규.
+- ✅ **Day 4: items 스키마 확장** — user_notes / user_notes_updated_at /
+  is_read / read_at 컬럼 + idx_items_unread partial index. migrate_schema.py
+  idempotent runner. GET/PATCH /items/{id} API. **user_notes 변경 시 BackgroundTask
+  로 LLM 키워드 추출 → items.tags 자동 병합** (한국어 자유 문체 지원). 23 tests 신규.
+- ⏳ **Day 5: 다양 포맷 텍스트 추출 통합 모듈** — `backend/ingest/document/`
+  (PDF 재사용 + DOCX/PPTX/TXT/MD). python-docx + python-pptx + charset-normalizer
+  추가. 한국어 cp949 인코딩 우선. 17 tests 신규. 다음: 텔레그램 첨부 ingest +
+  caption→user_notes + is_ingest_successful 확장 (attachments 키 포함).
+- ⏳ Day 6-9: graph backend endpoint (cytoscape JSON)
+- ⏳ Day 10-13: Next.js 14 graph UI + modality viewer
+- ⏳ Day 14: end-to-end 통합
 
 ### 구현 완료 (현재 main 브랜치)
 

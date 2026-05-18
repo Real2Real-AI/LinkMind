@@ -318,14 +318,16 @@ external/{openclaw,hermes-agent,hermes-webui}/  # gitignored 벤치마킹 참조
   JSON. `GET /graph/topics` / `/graph/search?q=` (FTS) / `/graph/item/{id}` (이웃).
   repository: list_items_summary / list_item_topic_links / search_items_by_text.
   Pydantic GraphNode/GraphEdge/GraphResponse. 17 tests.
-- ✅ **Next.js 16 graph UI** (frontend_v2/, Tailwind 4 + cytoscape 3.33) —
-  세 패널 (TopicsTree | GraphView | ItemDetails). topic = orange 원, item =
-  source_type 별 색상 (PDF=red / URL=blue / GitHub=purple / YouTube=darkred /
-  arxiv=green / document=amber / telegram=cyan), unread=yellow border, has_notes=
-  double border. 노드 클릭 → /graph/item/{id} 이웃 graph + 우측 ItemDetails
-  로딩. user_notes textarea + 저장 (PATCH → 백그라운드 LLM 키워드), is_read
-  토글 버튼, PDF figures grid (attachments role=figure), YouTube thumbnail,
-  GitHub repo 링크, raw_content expandable. 한국어 UI. build 통과.
+- ✅ **Next.js 16 graph UI** (frontend_v2/, Tailwind 4 + **react-force-graph-3d**
+  1.29 + three.js 0.184) — **옵시디언 3D Graph community plugin 과 동일 스택**.
+  WebGL 3D 그래프 (좌클릭 회전 / 우클릭 pan / 휠 zoom / 노드 클릭 → 카메라
+  zoom-to-node + 이웃 확장). 세 패널 (TopicsTree | GraphView 3D | ItemDetails).
+  topic = orange sphere (item_count 비례 size), item = source_type 별 색상
+  sphere (PDF=red / URL=blue / GitHub=purple / YouTube=darkred / arxiv=green /
+  document=amber / telegram=cyan). hover 시 HTML tooltip (label + tags +
+  unread/note indicator). user_notes textarea + 저장 (PATCH → 백그라운드 LLM
+  키워드), is_read 토글, PDF figures grid, YouTube/GitHub/URL modality view.
+  한국어 UI. build 통과.
 - ⏳ end-to-end 통합 + 데모 데이터 검증
 
 ### 구현 완료 (현재 main 브랜치)

@@ -71,7 +71,7 @@ LLM provider 추상화는 backend 의 책임. `ai_agents/` 모듈은 LLMProvider
 - **DB**: PostgreSQL 16 (관계형 + raw 본문) + Qdrant 1.12 (벡터)
 - **Embedding**: sentence-transformers (bge-m3) → Phase 2 에 TEI 로 전환
 - **LLM**: OpenAI / Anthropic / Ollama (provider abstraction)
-- **Frontend**: Streamlit (Phase 1-2 MVP, Settings/Search 탭 유지) + **Next.js 14 App Router + TypeScript + Tailwind + shadcn/ui + cytoscape.js** (Phase 2.5+, graph UI 부터 SaaS path 까지 일관)
+- **Frontend**: **Next.js 16 App Router + TypeScript + Tailwind 4 + react-force-graph-3d + three.js** (frontend_v2/, 일원화. Streamlit 은 Phase 2.5 wave-3 에서 폐기 — Settings/Ingest/Search/Graph 모두 frontend_v2 의 페이지로 마이그레이션됨). 옛 frontend/ 폴더는 회고용으로 남김 (step5 가 시작 안 함).
 - **Object storage**: 로컬 FS → MinIO (Phase 2)
 - **Python 환경**: **venv** (conda 아님). 이유: 시스템 의존성은 Docker 가 격리하고, Python 패키지는 전부 표준 pip — conda 의 강점이 안 살음. 학습(Phase 3 sVLL)용 conda env 는 그 시점에 별도 생성해 책임 분리.
 

@@ -387,7 +387,40 @@ external/{openclaw,hermes-agent,hermes-webui}/  # gitignored 벤치마킹 참조
 
 **🚧 진행 중**: `bash scripts/slack_ingest_all.sh` (background, tmux) — 메시지당 평균
 ~12 s/msg, **예상 1.5-2일** (vLLM 요약 + 임베딩 + URL fetch). over-night.
-완료되면 결과 확인 + manifest 분석 + step5 재기동.
+
+**ingest 완료 후 다음 세션 진입 순서** (이 흐름 그대로 todo 로 들어가 있음):
+
+```
+🚧 [현재]      전체 14241 메시지 ingest (background tmux, ~2일)
+   │
+   ▼
+☐  [ingest 끝난 직후] archive/slack_export/issues/<ts>/manifest.json 분석
+   - 도메인별 카운트 (`jq '.[] | .url' ... | sed 's|/[^/]*$||' | sort | uniq -c | sort -rn`)
+   - issue 유형 분포 (placeholder vs exception)
+   - 어떤 패턴이 몇 % — fix 우선순위 결정
+   │
+   ▼
+☐  [그 다음] issues 패턴별 재처리 로직 (새 모듈 또는 fix 모음)
+   - arxiv `/pdf/` 변환 retry (이번 wave 의 _classify_url fix 효과 검증)
+   - archive.org Wayback Machine fallback (dead link)
+   - t.ly 단축 URL 펼치기
+   - mp4 / image 직접 URL → 첨부 attachment 로 라우팅
+   - LinkedIn login wall — skip 표시 + 메타만 보존
+   - 그 외 manifest 보고 결정
+   │
+   ▼
+☐  [issues 정리 후] step5 재기동 + frontend 검증
+   - `bash scripts/step5_run_dev.sh`
+   - frontend_v2 의 카테고리/토픽 트리에서 Slack 데이터 어떻게 보이는지
+   - 검색/RAG 답변 품질 변화
+   │
+   ▼
+☐  [그 다음] D10 llm_wiki 아키텍처 plan (wave-5 1순위)
+   - external/karpathy/llm_wiki/ 분석
+   - docs/llm_wiki_design.md 신규
+   - backend/agents/ (retriever/writer/critic)
+   - /wiki/{slug} endpoint prototype
+```
 
 ### Phase 2.5 wave-4 (2026-05-18 ~ 19, 완료) — 카테고리 레이어 + Union 그래프 + Theme
 
